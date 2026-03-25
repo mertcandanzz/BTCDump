@@ -151,6 +151,7 @@ class FeatureConfig:
         "chop_adj_momentum", "vol_price_confirm",
         "ehlers_it_dist", "range_intensity", "median_dev",
         "trend_angle", "rvi_dorsey",
+        "pfe", "center_of_gravity",
     )
 
 

@@ -1992,6 +1992,23 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     std_10 = c.rolling(10).std()
     df["rvi_dorsey"] = _compute_rsi_series(std_10, 14)
 
+    # ── Polarized Fractal Efficiency (PFE) ──
+    # Measures how efficiently price moves: straight line / actual path
+    # +100 = perfect uptrend, -100 = perfect downtrend, 0 = random
+    pfe_period = 10
+    net_move = c - c.shift(pfe_period)
+    path_len = c.diff().abs().rolling(pfe_period).sum().replace(0, np.nan)
+    pfe_raw = (net_move / path_len * 100).fillna(0)
+    df["pfe"] = pfe_raw.ewm(span=5, adjust=False).mean()
+
+    # ── Center of Gravity (Ehlers) ──
+    # Leading oscillator: weighted price position within window
+    cg_period = 10
+    weights_cg = np.arange(cg_period, 0, -1, dtype=float)
+    numer = c.rolling(cg_period).apply(lambda x: np.dot(x, weights_cg), raw=True)
+    denom = c.rolling(cg_period).sum().replace(0, np.nan)
+    df["center_of_gravity"] = -(numer / denom - (cg_period + 1) / 2)
+
     return df
 
 
