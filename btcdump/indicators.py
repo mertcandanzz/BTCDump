@@ -38,6 +38,8 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _distribution_features(df)
     df = _squeeze_features(df)
     df = _pattern_features(df)
+    df = _ichimoku(df)
+    df = _volume_profile(df)
     return df
 
 
@@ -505,6 +507,113 @@ def _pattern_features(df: pd.DataFrame) -> pd.DataFrame:
     vol_ratio = v / v.rolling(20, min_periods=1).mean().replace(0, np.nan)
     df["pv_divergence"] = ret_abs / vol_ratio.replace(0, np.nan)  # high = thin move, low = volume-confirmed
 
+    return df
+
+
+def _ichimoku(df: pd.DataFrame) -> pd.DataFrame:
+    """Ichimoku Cloud: Tenkan/Kijun cross, cloud position, Chikou lag.
+
+    Standard crypto settings: 20/60/120/30 (adapted from 9/26/52/26 for 24/7 markets).
+    We use traditional settings for broader compatibility.
+    """
+    h, l, c = df["high"], df["low"], df["close"]
+
+    # Tenkan-sen (Conversion Line): (9-period high + 9-period low) / 2
+    tenkan = (h.rolling(9).max() + l.rolling(9).min()) / 2
+
+    # Kijun-sen (Base Line): (26-period high + 26-period low) / 2
+    kijun = (h.rolling(26).max() + l.rolling(26).min()) / 2
+
+    # Senkou Span A (Leading Span A): (Tenkan + Kijun) / 2, shifted 26 ahead
+    senkou_a = ((tenkan + kijun) / 2).shift(26)
+
+    # Senkou Span B (Leading Span B): (52-period high + 52-period low) / 2, shifted 26
+    senkou_b = ((h.rolling(52).max() + l.rolling(52).min()) / 2).shift(26)
+
+    # Features for ML:
+    # 1. TK cross signal: Tenkan vs Kijun position (normalized)
+    tk_diff = tenkan - kijun
+    df["ichimoku_tk"] = tk_diff / c.replace(0, np.nan) * 100  # as % of price
+
+    # 2. Price vs Cloud: where price sits relative to the cloud
+    cloud_top = pd.concat([senkou_a, senkou_b], axis=1).max(axis=1)
+    cloud_bottom = pd.concat([senkou_a, senkou_b], axis=1).min(axis=1)
+    cloud_mid = (cloud_top + cloud_bottom) / 2
+    cloud_width = (cloud_top - cloud_bottom).replace(0, np.nan)
+    df["ichimoku_cloud_pos"] = (c - cloud_mid) / cloud_width  # >0 = above cloud
+
+    # 3. Cloud thickness (normalized): thin cloud = weak S/R
+    df["ichimoku_cloud_width"] = cloud_width / c.replace(0, np.nan) * 100
+
+    # 4. Chikou span position: current close vs close 26 bars ago
+    df["ichimoku_chikou"] = (c - c.shift(26)) / c.shift(26).replace(0, np.nan) * 100
+
+    # 5. Kijun distance: price distance from Kijun (mean-reversion signal)
+    df["ichimoku_kijun_dist"] = (c - kijun) / c.replace(0, np.nan) * 100
+
+    return df
+
+
+def _volume_profile(df: pd.DataFrame, bins: int = 20) -> pd.DataFrame:
+    """Volume Profile features: POC, Value Area position.
+
+    Computes a volume-by-price distribution over last 100 bars to find
+    the Point of Control (price level with highest volume) and where
+    current price sits relative to the value area.
+    """
+    c, h, l, v = df["close"], df["high"], df["low"], df["volume"]
+
+    poc_dist = pd.Series(0.0, index=df.index)
+    va_position = pd.Series(0.5, index=df.index)
+
+    window = 100
+    for i in range(window, len(df)):
+        chunk_h = h.iloc[i - window:i].values
+        chunk_l = l.iloc[i - window:i].values
+        chunk_c = c.iloc[i - window:i].values
+        chunk_v = v.iloc[i - window:i].values
+
+        price_min, price_max = float(chunk_l.min()), float(chunk_h.max())
+        if price_max <= price_min:
+            continue
+
+        # Build volume profile: distribute each bar's volume across its range
+        edges = np.linspace(price_min, price_max, bins + 1)
+        profile = np.zeros(bins)
+        for j in range(len(chunk_v)):
+            bar_lo, bar_hi = chunk_l[j], chunk_h[j]
+            for b in range(bins):
+                if edges[b + 1] > bar_lo and edges[b] < bar_hi:
+                    overlap = min(edges[b + 1], bar_hi) - max(edges[b], bar_lo)
+                    bar_range = bar_hi - bar_lo
+                    if bar_range > 0:
+                        profile[b] += chunk_v[j] * (overlap / bar_range)
+
+        # POC: bin with most volume
+        poc_bin = int(np.argmax(profile))
+        poc_price = (edges[poc_bin] + edges[poc_bin + 1]) / 2
+        current = float(chunk_c[-1])
+        poc_dist.iloc[i] = (current - poc_price) / current * 100
+
+        # Value Area: 70% of volume centered on POC
+        total_vol = profile.sum()
+        if total_vol > 0:
+            sorted_bins = np.argsort(profile)[::-1]
+            cum = 0.0
+            va_bins = set()
+            for sb in sorted_bins:
+                va_bins.add(sb)
+                cum += profile[sb]
+                if cum >= total_vol * 0.7:
+                    break
+            va_low = edges[min(va_bins)]
+            va_high = edges[max(va_bins) + 1]
+            va_range = va_high - va_low
+            if va_range > 0:
+                va_position.iloc[i] = (current - va_low) / va_range
+
+    df["vp_poc_dist"] = poc_dist
+    df["vp_va_position"] = va_position
     return df
 
 

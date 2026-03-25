@@ -88,6 +88,11 @@ class FeatureConfig:
         "engulfing_score", "consecutive_dir",
         # v5.0 Pro: Order Flow Proxy
         "ofi_14", "pv_divergence",
+        # v5.0 Pro: Ichimoku Cloud
+        "ichimoku_tk", "ichimoku_cloud_pos", "ichimoku_cloud_width",
+        "ichimoku_chikou", "ichimoku_kijun_dist",
+        # v5.0 Pro: Volume Profile
+        "vp_poc_dist", "vp_va_position",
     )
 
 
