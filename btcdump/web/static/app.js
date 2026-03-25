@@ -498,6 +498,33 @@ function onBacktestComplete(data) {
     }
 }
 
+// ── Strategy Comparison ──
+async function compareStrategies() {
+    const el = document.getElementById('strategyCompareResults');
+    el.innerHTML = '<div style="padding:10px;color:var(--text-muted)">Comparing 5 strategies...</div>';
+    try {
+        const r = await fetch(`/api/coin/${activeSymbol}/strategy-compare`);
+        const j = await r.json();
+        if (!j.ok) { el.innerHTML = `<div style="padding:10px;color:var(--red)">${j.error}</div>`; return; }
+
+        let h = '<table class="comparison-table"><thead><tr><th>Strategy</th><th>Return</th><th>Trades</th><th>Win Rate</th><th>Avg/Trade</th></tr></thead><tbody>';
+        const entries = Object.entries(j.strategies).sort((a, b) => b[1].total_return_pct - a[1].total_return_pct);
+        entries.forEach(([name, s], i) => {
+            const retColor = s.total_return_pct >= 0 ? 'var(--green)' : 'var(--red)';
+            const isBest = i === 0;
+            h += `<tr style="${isBest ? 'background:var(--accent-dim)' : ''}">
+                <td><strong>${name}</strong>${isBest ? ' <span style="color:var(--accent);font-size:9px">BEST</span>' : ''}</td>
+                <td style="color:${retColor};font-weight:700">${s.total_return_pct >= 0 ? '+' : ''}${s.total_return_pct}%</td>
+                <td>${s.trades}</td>
+                <td>${s.win_rate}%</td>
+                <td>${s.avg_per_trade >= 0 ? '+' : ''}${s.avg_per_trade}%</td>
+            </tr>`;
+        });
+        h += '</tbody></table>';
+        el.innerHTML = h;
+    } catch(e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">Failed</div>'; }
+}
+
 // ── Live Price ──
 function onLivePrice(tick) {
     // Update ticker strip

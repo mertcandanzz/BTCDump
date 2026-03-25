@@ -666,6 +666,40 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Strategy Comparison ────────────────────────────────
+
+    @app.get("/api/coin/{symbol}/strategy-compare")
+    async def strategy_compare(symbol: str):
+        """Compare different trading strategies on recent data."""
+        try:
+            def _compare():
+                from btcdump import indicators as ind
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = ind.compute_all(data.df.copy(), state.config.indicators)
+                df = enriched.tail(200)  # last 200 candles
+                results = {}
+
+                for strategy_name, signal_fn in _STRATEGIES.items():
+                    signals = signal_fn(df)
+                    pnl, trades, wins = _simulate_signals(df, signals)
+                    total_ret = float(pnl[-1]) if len(pnl) else 0
+                    win_rate = wins / trades if trades > 0 else 0
+                    results[strategy_name] = {
+                        "total_return_pct": round(total_ret, 2),
+                        "trades": trades,
+                        "win_rate": round(win_rate * 100, 1),
+                        "avg_per_trade": round(total_ret / trades, 2) if trades > 0 else 0,
+                    }
+
+                return results
+
+            result = await asyncio.to_thread(_compare)
+            return {"ok": True, "symbol": symbol, "strategies": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Market Regime Classifier ───────────────────────────
 
     @app.get("/api/coin/{symbol}/regime")
@@ -1228,6 +1262,132 @@ async def _handle_backtest(ws: WebSocket, state: BTCDumpWebApp, msg: dict) -> No
         }})
     except Exception as e:
         await ws.send_json({"type": "error", "message": f"Backtest failed: {e}"})
+
+
+# ── Strategy Definitions for Comparison ────────────────────
+
+import numpy as _np
+import pandas as _pd
+
+
+def _strat_rsi_reversion(df):
+    """Buy when RSI < 30, sell when RSI > 70."""
+    signals = _np.zeros(len(df))
+    rsi = df.get("RSI", _pd.Series(50, index=df.index))
+    for i in range(1, len(df)):
+        if rsi.iloc[i] < 30:
+            signals[i] = 1  # buy
+        elif rsi.iloc[i] > 70:
+            signals[i] = -1  # sell
+    return signals
+
+
+def _strat_macd_crossover(df):
+    """Buy on MACD bullish cross, sell on bearish cross."""
+    signals = _np.zeros(len(df))
+    macd = df.get("MACD", _pd.Series(0, index=df.index))
+    sig = df.get("MACD_signal", _pd.Series(0, index=df.index))
+    for i in range(1, len(df)):
+        if macd.iloc[i] > sig.iloc[i] and macd.iloc[i-1] <= sig.iloc[i-1]:
+            signals[i] = 1
+        elif macd.iloc[i] < sig.iloc[i] and macd.iloc[i-1] >= sig.iloc[i-1]:
+            signals[i] = -1
+    return signals
+
+
+def _strat_bollinger_bounce(df):
+    """Buy near lower BB, sell near upper BB."""
+    signals = _np.zeros(len(df))
+    c = df["close"]
+    bb_lower = df.get("BB_lower", c)
+    bb_upper = df.get("BB_upper", c)
+    for i in range(1, len(df)):
+        if c.iloc[i] <= bb_lower.iloc[i] * 1.005:
+            signals[i] = 1
+        elif c.iloc[i] >= bb_upper.iloc[i] * 0.995:
+            signals[i] = -1
+    return signals
+
+
+def _strat_ema_trend(df):
+    """Buy when EMA9 > EMA21, sell when EMA9 < EMA21."""
+    signals = _np.zeros(len(df))
+    c = df["close"]
+    ema9 = c.ewm(span=9).mean()
+    ema21 = c.ewm(span=21).mean()
+    for i in range(1, len(df)):
+        if ema9.iloc[i] > ema21.iloc[i] and ema9.iloc[i-1] <= ema21.iloc[i-1]:
+            signals[i] = 1
+        elif ema9.iloc[i] < ema21.iloc[i] and ema9.iloc[i-1] >= ema21.iloc[i-1]:
+            signals[i] = -1
+    return signals
+
+
+def _strat_ichimoku(df):
+    """Buy above cloud + TK cross, sell below cloud + TK cross."""
+    signals = _np.zeros(len(df))
+    cloud_pos = df.get("ichimoku_cloud_pos", _pd.Series(0, index=df.index))
+    tk = df.get("ichimoku_tk", _pd.Series(0, index=df.index))
+    for i in range(1, len(df)):
+        if cloud_pos.iloc[i] > 0 and tk.iloc[i] > 0 and tk.iloc[i-1] <= 0:
+            signals[i] = 1
+        elif cloud_pos.iloc[i] < 0 and tk.iloc[i] < 0 and tk.iloc[i-1] >= 0:
+            signals[i] = -1
+    return signals
+
+
+_STRATEGIES = {
+    "RSI Mean Reversion": _strat_rsi_reversion,
+    "MACD Crossover": _strat_macd_crossover,
+    "Bollinger Bounce": _strat_bollinger_bounce,
+    "EMA Trend Follow": _strat_ema_trend,
+    "Ichimoku Cloud": _strat_ichimoku,
+}
+
+
+def _simulate_signals(df, signals):
+    """Simple signal simulator: returns cumulative PnL, trade count, wins."""
+    closes = df["close"].values
+    pnl = []
+    cum = 0.0
+    position = 0  # 0=flat, 1=long, -1=short
+    entry_price = 0
+    trades = 0
+    wins = 0
+
+    for i in range(len(signals)):
+        if signals[i] == 1 and position <= 0:
+            if position == -1:  # close short
+                ret = (entry_price - closes[i]) / entry_price * 100
+                cum += ret
+                trades += 1
+                if ret > 0: wins += 1
+            position = 1
+            entry_price = closes[i]
+        elif signals[i] == -1 and position >= 0:
+            if position == 1:  # close long
+                ret = (closes[i] - entry_price) / entry_price * 100
+                cum += ret
+                trades += 1
+                if ret > 0: wins += 1
+            position = -1
+            entry_price = closes[i]
+        pnl.append(cum)
+
+    # Close open position
+    if position == 1:
+        ret = (closes[-1] - entry_price) / entry_price * 100
+        cum += ret
+        trades += 1
+        if ret > 0: wins += 1
+    elif position == -1:
+        ret = (entry_price - closes[-1]) / entry_price * 100
+        cum += ret
+        trades += 1
+        if ret > 0: wins += 1
+
+    pnl.append(cum)
+    return pnl, trades, wins
 
 
 def _run_scanner(state: BTCDumpWebApp, condition: str, limit: int) -> list:
