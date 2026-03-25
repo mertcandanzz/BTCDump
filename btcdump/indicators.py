@@ -30,6 +30,14 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _cci(df)
     df = _mfi(df)
     df = _derived_features(df)
+    df = _regime_features(df)
+    df = _advanced_momentum(df)
+    df = _volatility_regime(df)
+    df = _liquidity_features(df)
+    df = _time_features(df)
+    df = _distribution_features(df)
+    df = _squeeze_features(df)
+    df = _pattern_features(df)
     return df
 
 
@@ -286,6 +294,198 @@ def _derived_features(df: pd.DataFrame) -> pd.DataFrame:
         df["vwap_dist"] = (c - df["VWAP"]) / atr_val.replace(0, np.nan)
     else:
         df["vwap_dist"] = 0.0
+
+    return df
+
+
+def _regime_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Regime detection: trending vs mean-reverting."""
+    c = df["close"]
+
+    # Kaufman Efficiency Ratio: |net move| / sum(|bar moves|)
+    n = 10
+    net_change = (c - c.shift(n)).abs()
+    volatility_sum = c.diff().abs().rolling(n).sum()
+    df["efficiency_ratio"] = net_change / volatility_sum.replace(0, np.nan)
+
+    # Choppiness Index: 100 * log10(sum(ATR,14) / range) / log10(14)
+    if "ATR" in df.columns:
+        atr_sum = df["ATR"].rolling(14).sum()
+        hh = df["high"].rolling(14).max()
+        ll = df["low"].rolling(14).min()
+        denom = (hh - ll).replace(0, np.nan)
+        df["choppiness"] = 100 * np.log10(atr_sum / denom) / np.log10(14)
+    else:
+        df["choppiness"] = 50.0
+
+    # ADX slope: trend strengthening or weakening
+    if "ADX" in df.columns:
+        df["adx_slope"] = df["ADX"].diff(5)
+    else:
+        df["adx_slope"] = 0.0
+
+    return df
+
+
+def _advanced_momentum(df: pd.DataFrame) -> pd.DataFrame:
+    """Advanced momentum: TSI, divergence, multi-scale returns."""
+    c = df["close"]
+
+    # True Strength Index (double-smoothed momentum)
+    mom = c.diff(1)
+    smooth1 = mom.ewm(span=25, adjust=False).mean()
+    smooth2 = smooth1.ewm(span=13, adjust=False).mean()
+    abs_smooth1 = mom.abs().ewm(span=25, adjust=False).mean()
+    abs_smooth2 = abs_smooth1.ewm(span=13, adjust=False).mean()
+    df["tsi"] = 100 * smooth2 / abs_smooth2.replace(0, np.nan)
+
+    # RSI divergence (quantitative): price momentum vs RSI momentum
+    if "RSI" in df.columns:
+        df["rsi_divergence"] = c.pct_change(14) - df["RSI"].pct_change(14)
+    else:
+        df["rsi_divergence"] = 0.0
+
+    # Medium-term returns
+    df["returns_10"] = c.pct_change(10)
+    df["returns_20"] = c.pct_change(20)
+
+    # Momentum quality: return / volatility (directional Sharpe)
+    vol_20 = c.pct_change().rolling(20).std().replace(0, np.nan)
+    df["momentum_quality"] = c.pct_change(20) / vol_20
+
+    return df
+
+
+def _volatility_regime(df: pd.DataFrame) -> pd.DataFrame:
+    """Volatility regime: GARCH proxy, Yang-Zhang, vol-of-vol."""
+    c, h, l, o = df["close"], df["high"], df["low"], df["open"]
+    ret = c.pct_change()
+
+    # GARCH proxy: short-term vol / long-term vol
+    realized_5 = ret.rolling(5).std()
+    expected_20 = ret.rolling(20).std().replace(0, np.nan)
+    df["garch_proxy"] = realized_5 / expected_20
+
+    # Vol of vol (convexity)
+    vol_10 = ret.rolling(10).std()
+    df["vol_of_vol"] = vol_10.rolling(10).std()
+
+    # Yang-Zhang volatility (state-of-the-art OHLCV estimator)
+    overnight = np.log(o / c.shift(1).replace(0, np.nan))
+    intraday_oc = np.log(c / o.replace(0, np.nan))
+    intraday_hl = np.log(h / l.replace(0, np.nan))
+
+    var_o = overnight.rolling(20).var()
+    var_oc = intraday_oc.rolling(20).var()
+    var_hl = intraday_hl.rolling(20).var()
+    k = 0.34 / (1.34 + (20 + 1) / (20 - 1))
+    yz_var = var_o + k * var_oc + (1 - k) * var_hl
+    df["yang_zhang_vol"] = np.sqrt(yz_var.clip(lower=0))
+
+    return df
+
+
+def _liquidity_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Liquidity: volume trend, Amihud illiquidity."""
+    v = df["volume"]
+    c = df["close"]
+    ret = c.pct_change().abs()
+
+    # Volume trend (slope of volume / mean volume)
+    v_mean = v.rolling(20, min_periods=1).mean()
+    v_diff = v.diff()
+    df["volume_trend"] = v_diff.rolling(20, min_periods=1).mean() / v_mean.replace(0, np.nan)
+
+    # Amihud illiquidity: |return| / dollar volume
+    dollar_vol = (v * c).replace(0, np.nan)
+    amihud = (ret / dollar_vol)
+    # Log transform and rolling mean for stability
+    df["amihud_illiq"] = np.log1p(amihud.rolling(20, min_periods=1).mean() * 1e6)
+
+    return df
+
+
+def _time_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Cyclical time features: hour, day of week."""
+    if "time" not in df.columns:
+        df["hour_sin"] = 0.0
+        df["hour_cos"] = 0.0
+        df["dow_sin"] = 0.0
+        df["dow_cos"] = 0.0
+        return df
+
+    try:
+        ts = pd.to_datetime(df["time"])
+        hour = ts.dt.hour + ts.dt.minute / 60.0
+        dow = ts.dt.dayofweek
+
+        df["hour_sin"] = np.sin(2 * np.pi * hour / 24)
+        df["hour_cos"] = np.cos(2 * np.pi * hour / 24)
+        df["dow_sin"] = np.sin(2 * np.pi * dow / 7)
+        df["dow_cos"] = np.cos(2 * np.pi * dow / 7)
+    except Exception:
+        df["hour_sin"] = 0.0
+        df["hour_cos"] = 0.0
+        df["dow_sin"] = 0.0
+        df["dow_cos"] = 0.0
+
+    return df
+
+
+def _distribution_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Return distribution shape: skewness, kurtosis."""
+    ret = df["close"].pct_change()
+    df["skewness_20"] = ret.rolling(20).skew()
+    df["kurtosis_20"] = ret.rolling(20).kurt()
+    return df
+
+
+def _squeeze_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Keltner channels + Bollinger squeeze detection."""
+    c = df["close"]
+
+    # Keltner channels (EMA-based with ATR)
+    keltner_mid = c.ewm(span=20, adjust=False).mean()
+    if "ATR" in df.columns:
+        keltner_upper = keltner_mid + 2.0 * df["ATR"]
+        keltner_lower = keltner_mid - 2.0 * df["ATR"]
+    else:
+        keltner_upper = keltner_mid * 1.02
+        keltner_lower = keltner_mid * 0.98
+
+    keltner_range = (keltner_upper - keltner_lower).replace(0, np.nan)
+    df["keltner_position"] = (c - keltner_lower) / keltner_range
+
+    # BB squeeze: BB width / Keltner width
+    if "bb_width" in df.columns:
+        bb_range = df.get("BB_upper", keltner_upper) - df.get("BB_lower", keltner_lower)
+        df["squeeze_ratio"] = bb_range / keltner_range
+    else:
+        df["squeeze_ratio"] = 1.0
+
+    return df
+
+
+def _pattern_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Multi-candle pattern quantification."""
+    c, o = df["close"], df["open"]
+
+    # Engulfing score
+    prev_body = c.shift(1) - o.shift(1)
+    curr_body = c - o
+    abs_prev = prev_body.abs().replace(0, np.nan)
+    bull_engulf = (curr_body > 0) & (prev_body < 0) & (curr_body.abs() > abs_prev)
+    bear_engulf = (curr_body < 0) & (prev_body > 0) & (curr_body.abs() > abs_prev)
+    df["engulfing_score"] = np.where(
+        bull_engulf, curr_body / abs_prev,
+        np.where(bear_engulf, curr_body / abs_prev, 0),
+    )
+
+    # Consecutive direction count (positive=bullish streak, negative=bearish)
+    direction = np.sign(c - o)
+    groups = (direction != direction.shift()).cumsum()
+    streak = direction.groupby(groups).cumcount() + 1
+    df["consecutive_dir"] = streak * direction
 
     return df
 

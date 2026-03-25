@@ -70,6 +70,22 @@ class FeatureConfig:
         "rsi_momentum", "macd_hist_slope",
         # Mean reversion & position
         "close_ma_ratio", "price_zscore", "vwap_dist",
+        # v5.0 Pro Features: Regime Detection
+        "efficiency_ratio", "choppiness", "adx_slope",
+        # v5.0 Pro: Advanced Momentum
+        "tsi", "rsi_divergence", "returns_10", "returns_20", "momentum_quality",
+        # v5.0 Pro: Volatility Regime
+        "garch_proxy", "vol_of_vol", "yang_zhang_vol",
+        # v5.0 Pro: Liquidity
+        "volume_trend", "amihud_illiq",
+        # v5.0 Pro: Time Cyclical
+        "hour_sin", "hour_cos", "dow_sin", "dow_cos",
+        # v5.0 Pro: Distribution Shape
+        "skewness_20", "kurtosis_20",
+        # v5.0 Pro: Squeeze Detection
+        "keltner_position", "squeeze_ratio",
+        # v5.0 Pro: Pattern Quantification
+        "engulfing_score", "consecutive_dir",
     )
 
 
