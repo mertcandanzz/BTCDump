@@ -243,6 +243,7 @@ function updateSignalUI(d) {
     loadSLTP(d.symbol || activeSymbol);
     loadRegime(d.symbol || activeSymbol);
     loadPredictionRange(d.symbol || activeSymbol);
+    loadMarketHealth(d.symbol || activeSymbol);
 }
 
 // RSI Semi-circle Gauge
@@ -952,6 +953,20 @@ async function generateNarrative() {
         addDiscMsg('system', '--- End Report ---');
         toast('AI Report generated', 'success');
     } catch(e) { toast('Report failed', 'error'); }
+}
+
+// ── Market Health ──
+async function loadMarketHealth(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/market-health`);
+        const j = await r.json();
+        if (!j.ok) return;
+        const gradeColors = {A:'var(--green)',B:'#66bb6a',C:'var(--yellow)',D:'#ff9800',F:'var(--red)'};
+        const badge = document.getElementById('regimeStrategy');
+        if (badge) {
+            badge.innerHTML += ` | Health: <strong style="color:${gradeColors[j.grade] || '#888'}">${j.grade} (${j.health_score})</strong>`;
+        }
+    } catch(e) {}
 }
 
 // ── Market Regime ──

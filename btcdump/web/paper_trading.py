@@ -51,6 +51,7 @@ class PaperTrader:
         self.balance = initial_balance
         self.positions: Dict[str, Position] = {}
         self.history: List[ClosedTrade] = []
+        self.journal: Dict[str, List[Dict]] = {}  # trade_id -> notes
 
     def open_position(self, symbol: str, side: str, price: float,
                       size_pct: float = 10, stop_loss: float = 0, take_profit: float = 0) -> Dict:
@@ -130,6 +131,24 @@ class PaperTrader:
         self.balance = self.initial_balance
         self.positions.clear()
         self.history.clear()
+        self.journal.clear()
+
+    def add_note(self, trade_id: str, note: str) -> Dict:
+        """Add a journal note to a trade."""
+        entry = {
+            "note": note,
+            "timestamp": datetime.now().isoformat(),
+        }
+        if trade_id not in self.journal:
+            self.journal[trade_id] = []
+        self.journal[trade_id].append(entry)
+        return entry
+
+    def get_journal(self, trade_id: str = "") -> Dict:
+        """Get journal entries."""
+        if trade_id:
+            return {"trade_id": trade_id, "notes": self.journal.get(trade_id, [])}
+        return {"all_notes": {k: v for k, v in self.journal.items() if v}}
 
     @staticmethod
     def _pos_dict(pos, price):

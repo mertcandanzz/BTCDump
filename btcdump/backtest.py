@@ -118,10 +118,16 @@ class BacktestEngine:
 
         return self._compile_results(results)
 
+    # Trading fee (Binance spot: 0.1% per trade, entry + exit = 0.2% round trip)
+    FEE_PER_TRADE_PCT = 0.1  # 0.1% per side
+
     def _compile_results(
         self, results: List[Tuple[Signal, float]],
     ) -> BacktestResult:
-        """Compute performance metrics from (signal, actual_return) pairs."""
+        """Compute performance metrics from (signal, actual_return) pairs.
+
+        Includes realistic Binance trading fees (0.1% per side = 0.2% round trip).
+        """
         if not results:
             return self._empty_result()
 
@@ -129,14 +135,15 @@ class BacktestEngine:
         wins: List[float] = []
         losses: List[float] = []
         equity = [100.0]
+        fee = self.FEE_PER_TRADE_PCT * 2  # round trip
 
         for signal, actual_ret in results:
             if signal.direction in ("BUY", "STRONG BUY"):
-                pnl = actual_ret
+                pnl = actual_ret - fee  # subtract round-trip fee
             elif signal.direction in ("SELL", "STRONG SELL"):
-                pnl = -actual_ret
+                pnl = -actual_ret - fee  # subtract round-trip fee
             else:
-                pnl = 0.0
+                pnl = 0.0  # HOLD = no trade = no fee
 
             if pnl > 0:
                 wins.append(pnl)

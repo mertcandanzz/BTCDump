@@ -944,6 +944,138 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
             return {"ok": True, "symbol": symbol, "current_rate": 0, "annual_rate": 0,
                     "sentiment": "unavailable", "history": [], "note": str(e)}
 
+    # ── Volatility Term Structure ──────────────────────────
+
+    @app.get("/api/coin/{symbol}/vol-term-structure")
+    async def vol_term_structure(symbol: str):
+        """Compare realized volatility across multiple timeframes."""
+        try:
+            def _calc():
+                results = {}
+                for tf in ["5m", "15m", "1h", "4h", "1d"]:
+                    try:
+                        data = state.coin_manager.fetcher.fetch_with_cache(symbol, tf)
+                        ret = data.df["close"].pct_change().dropna()
+                        if len(ret) < 20:
+                            continue
+                        # Annualized vol (rough: multiply by sqrt of periods per year)
+                        periods_map = {"5m": 105120, "15m": 35040, "1h": 8760, "4h": 2190, "1d": 365}
+                        ann_factor = np.sqrt(periods_map.get(tf, 8760))
+                        vol = float(ret.tail(50).std() * ann_factor * 100)
+                        vol_short = float(ret.tail(10).std() * ann_factor * 100)
+                        results[tf] = {
+                            "realized_vol": round(vol, 2),
+                            "short_term_vol": round(vol_short, 2),
+                            "vol_ratio": round(vol_short / vol, 3) if vol > 0 else 1,
+                        }
+                    except Exception:
+                        continue
+
+                # Term structure shape
+                vols = [results[tf]["realized_vol"] for tf in ["15m", "1h", "4h", "1d"] if tf in results]
+                if len(vols) >= 2:
+                    if vols[-1] > vols[0] * 1.1:
+                        shape = "contango (higher TF vol > lower = normal)"
+                    elif vols[-1] < vols[0] * 0.9:
+                        shape = "backwardation (lower TF vol > higher = stress/event)"
+                    else:
+                        shape = "flat (similar vol across TFs)"
+                else:
+                    shape = "insufficient data"
+
+                return {"timeframes": results, "shape": shape}
+
+            result = await asyncio.to_thread(_calc)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Market Health Score ───────────────────────────────
+
+    @app.get("/api/coin/{symbol}/market-health")
+    async def market_health(symbol: str):
+        """Composite market quality/health score from microstructure data."""
+        try:
+            def _calc():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+                row = enriched.iloc[-1]
+
+                def _safe(key, default=0):
+                    v = row.get(key, default)
+                    return default if (hasattr(v, '__float__') and v != v) else float(v)
+
+                # Components (each 0-100)
+                # 1. Liquidity (volume ratio + Amihud)
+                vol_ratio = min(3, _safe("volume_ratio", 1))
+                liquidity = min(100, vol_ratio * 33)
+
+                # 2. Trend clarity (efficiency + ADX)
+                efficiency = _safe("efficiency_ratio", 0.5)
+                adx = _safe("ADX", 25)
+                trend_clarity = min(100, efficiency * 60 + adx * 1.0)
+
+                # 3. Volatility regime (not too high, not too low)
+                garch = _safe("garch_proxy", 1)
+                # Optimal vol ratio around 1.0; too high or low is bad
+                vol_quality = max(0, 100 - abs(garch - 1) * 60)
+
+                # 4. Order flow (buying vs selling balance)
+                ofi = abs(_safe("ofi_14", 0))
+                flow_strength = min(100, ofi * 200)
+
+                # 5. Spread/microstructure (trade intensity, entropy)
+                entropy = _safe("price_entropy", 1.5)
+                # Lower entropy = more predictable = healthier for trading
+                predictability = max(0, 100 - entropy * 30)
+
+                # 6. Whale activity (bonus)
+                whale = _safe("whale_score", 0)
+                whale_bonus = min(15, whale * 5)
+
+                # Composite
+                health = (
+                    liquidity * 0.25 +
+                    trend_clarity * 0.25 +
+                    vol_quality * 0.20 +
+                    flow_strength * 0.15 +
+                    predictability * 0.15 +
+                    whale_bonus
+                )
+                health = min(100, max(0, health))
+
+                if health >= 70:
+                    grade, interpretation = "A", "Excellent trading conditions"
+                elif health >= 55:
+                    grade, interpretation = "B", "Good conditions, proceed with normal sizing"
+                elif health >= 40:
+                    grade, interpretation = "C", "Fair conditions, reduce position size"
+                elif health >= 25:
+                    grade, interpretation = "D", "Poor conditions, consider sitting out"
+                else:
+                    grade, interpretation = "F", "Avoid trading - low liquidity or high chaos"
+
+                return {
+                    "health_score": round(health, 1),
+                    "grade": grade,
+                    "interpretation": interpretation,
+                    "components": {
+                        "liquidity": round(liquidity, 1),
+                        "trend_clarity": round(trend_clarity, 1),
+                        "vol_quality": round(vol_quality, 1),
+                        "flow_strength": round(flow_strength, 1),
+                        "predictability": round(predictability, 1),
+                        "whale_bonus": round(whale_bonus, 1),
+                    },
+                }
+
+            result = await asyncio.to_thread(_calc)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Open Interest ─────────────────────────────────────
 
     @app.get("/api/coin/{symbol}/open-interest")
@@ -2019,6 +2151,19 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
     @app.get("/api/paper/history")
     async def paper_history():
         return {"ok": True, "trades": state.paper_trader.get_history()}
+
+    @app.post("/api/paper/journal")
+    async def add_journal_note(body: dict):
+        trade_id = body.get("trade_id", "")
+        note = body.get("note", "")
+        if not trade_id or not note:
+            return {"ok": False, "error": "trade_id and note required"}
+        entry = state.paper_trader.add_note(trade_id, note)
+        return {"ok": True, "entry": entry}
+
+    @app.get("/api/paper/journal")
+    async def get_journal(trade_id: str = ""):
+        return {"ok": True, **state.paper_trader.get_journal(trade_id)}
 
     @app.post("/api/paper/reset")
     async def paper_reset():
