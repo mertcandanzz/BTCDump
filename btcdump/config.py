@@ -139,6 +139,7 @@ class FeatureConfig:
         "dpo", "ultimate_osc",
         "awesome_osc", "accel_decel", "supertrend_dir",
         "schaff_tc", "coppock_curve",
+        "kst", "ease_of_movement", "natr",
     )
 
 

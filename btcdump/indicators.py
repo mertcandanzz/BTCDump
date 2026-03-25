@@ -1749,6 +1749,32 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
         lambda x: np.dot(x, weights_wma) / weights_wma.sum() if len(x) == 10 else 0, raw=True
     )
 
+    # ── Know Sure Thing (KST) ──
+    # Martin Pring: weighted sum of 4 smoothed ROCs at different periods
+    # Captures momentum consensus across multiple timeframes
+    roc1 = c.pct_change(10).rolling(10).mean() * 100
+    roc2 = c.pct_change(15).rolling(10).mean() * 100
+    roc3 = c.pct_change(20).rolling(10).mean() * 100
+    roc4 = c.pct_change(30).rolling(15).mean() * 100
+    kst = roc1 * 1 + roc2 * 2 + roc3 * 3 + roc4 * 4
+    kst_signal = kst.rolling(9).mean()
+    df["kst"] = kst - kst_signal  # histogram (like MACD hist)
+
+    # ── Ease of Movement (EMV) ──
+    # Relates price change to volume: how easily price moves
+    # High EMV = price moving easily on low volume (strong trend)
+    distance = ((h + l) / 2) - ((h.shift(1) + l.shift(1)) / 2)
+    box_ratio = (v / 1e6) / (h - l).replace(0, np.nan)  # volume per unit range
+    emv = distance / box_ratio.replace(0, np.nan)
+    df["ease_of_movement"] = emv.rolling(14).mean()
+
+    # ── Normalized ATR (NATR) ──
+    # ATR as percentage of price - better for cross-asset comparison
+    if "ATR" in df.columns:
+        df["natr"] = df["ATR"] / c.replace(0, np.nan) * 100
+    else:
+        df["natr"] = (h - l).rolling(14).mean() / c.replace(0, np.nan) * 100
+
     return df
 
 
