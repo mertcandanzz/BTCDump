@@ -94,6 +94,7 @@
                     <div class="pred-row">
                         <span class="signal-label">AI Pred</span>
                         <span id="predPrice" class="signal-pred">--</span>
+                        <span id="predRange" class="pred-range" style="display:none"></span>
                         <span id="rsBadge" class="rs-badge" style="display:none"></span>
                     </div>
                 </div>
@@ -381,8 +382,9 @@
                 </div>
                 <div id="compareLeaderboardContent" style="display:none">
                     <div style="padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)">
-                        <button class="btn btn-primary btn-sm" onclick="loadLeaderboard()">Load Leaderboard</button>
-                        <span class="panel-hint">Ranks coins by composite signal quality score</span>
+                        <button class="btn btn-primary btn-sm" onclick="loadLeaderboard()">Leaderboard</button>
+                        <button class="btn btn-sm" onclick="loadMomentumRotation()">Momentum Rotation</button>
+                        <span class="panel-hint">Ranks coins by signal quality or momentum</span>
                     </div>
                     <div id="leaderboardResults" style="overflow:auto;font-size:11px"></div>
                 </div>

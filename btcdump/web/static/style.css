@@ -312,6 +312,9 @@ main.collapsed #leftPanel{display:none}
 .regime-name{font-size:11px;font-weight:700;flex:1}
 .regime-strategy{font-size:9px;color:var(--text-dim);text-align:right}
 
+/* ── Prediction Range ── */
+.pred-range{font-size:9px;color:var(--text-muted);padding:1px 5px;background:var(--bg);border-radius:3px}
+
 /* ── Relative Strength Badge ── */
 .rs-badge{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:var(--radius-sm);background:var(--bg);font-size:9px;margin-left:auto}
 .rs-label{color:var(--text-muted);font-weight:600}

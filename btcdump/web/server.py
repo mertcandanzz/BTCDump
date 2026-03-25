@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -663,6 +664,150 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
                 return detect_anomalies(data.df)
             result = await asyncio.to_thread(_detect)
             return {"ok": True, **result, "symbol": symbol}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Prediction Confidence Intervals ─────────────────────
+
+    @app.get("/api/coin/{symbol}/prediction-range")
+    async def get_prediction_range(symbol: str):
+        """Get prediction with confidence intervals."""
+        try:
+            def _predict():
+                ensemble = state.coin_manager.ensembles.get(symbol)
+                if not ensemble:
+                    ensemble = state.pipeline.load(symbol, state.coin_manager.active_interval)
+                if not ensemble:
+                    return None
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                return state.pipeline.predict_with_intervals(ensemble, data.df)
+
+            result = await asyncio.to_thread(_predict)
+            if not result:
+                return {"ok": False, "error": "No trained model. Refresh signal first."}
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Momentum Rotation ─────────────────────────────────
+
+    @app.get("/api/momentum-rotation")
+    async def momentum_rotation():
+        """Suggest coin rotation based on momentum + regime analysis."""
+        try:
+            def _rotate():
+                from btcdump import indicators as ind
+                interval = state.coin_manager.active_interval
+                results = []
+
+                try:
+                    btc_data = state.coin_manager.fetcher.fetch_with_cache("BTCUSDT", interval)
+                except Exception:
+                    btc_data = None
+
+                for symbol in state.coin_manager.watchlist:
+                    try:
+                        data = state.coin_manager.fetcher.fetch_with_cache(symbol, interval)
+                        enriched = ind.compute_all(data.df.copy(), state.config.indicators)
+                        row = enriched.iloc[-1]
+
+                        # Momentum score (multi-timeframe momentum)
+                        ret_1 = float(row.get("returns_1", 0)) * 100
+                        ret_5 = float(row.get("returns_5", 0)) * 100
+                        ret_10 = float(row.get("returns_10", 0)) * 100
+                        ret_20 = float(row.get("returns_20", 0)) * 100
+
+                        # Weighted momentum: recent > distant
+                        momentum = ret_1 * 0.1 + ret_5 * 0.2 + ret_10 * 0.3 + ret_20 * 0.4
+
+                        # Regime bonus: trending coins get boosted
+                        efficiency = float(row.get("efficiency_ratio", 0.5))
+                        hurst = float(row.get("hurst_exponent", 0.5))
+                        regime_mult = 1.0 + max(0, efficiency - 0.4) + max(0, hurst - 0.5)
+
+                        # Volume confirmation
+                        vol_ratio = float(row.get("volume_ratio", 1))
+                        vol_mult = min(1.5, max(0.5, vol_ratio))
+
+                        # RS vs BTC
+                        rs_bonus = 0
+                        if btc_data and symbol != "BTCUSDT":
+                            rs = ind.compute_relative_strength(data.df, btc_data.df)
+                            rs_bonus = rs.get("rs_ratio", 0) * 0.3
+
+                        final_score = momentum * regime_mult * vol_mult + rs_bonus
+
+                        results.append({
+                            "symbol": symbol,
+                            "baseAsset": symbol.replace("USDT", ""),
+                            "momentum_score": round(final_score, 2),
+                            "momentum_raw": round(momentum, 2),
+                            "regime": "trending" if efficiency > 0.5 else "choppy",
+                            "volume": round(vol_ratio, 2),
+                            "ret_1d": round(ret_20, 2),
+                            "ret_5bar": round(ret_5, 2),
+                            "rs_vs_btc": round(rs_bonus / 0.3, 2) if rs_bonus else 0,
+                        })
+                    except Exception:
+                        continue
+
+                results.sort(key=lambda x: x["momentum_score"], reverse=True)
+
+                # Top 3 = BUY rotation, Bottom 3 = potential SELL/avoid
+                buy_candidates = results[:3] if results else []
+                sell_candidates = results[-3:] if len(results) > 3 else []
+
+                return {
+                    "all": results,
+                    "buy_rotation": buy_candidates,
+                    "sell_rotation": sell_candidates,
+                    "summary": f"Rotate into: {', '.join(r['baseAsset'] for r in buy_candidates)}. "
+                               f"Avoid: {', '.join(r['baseAsset'] for r in sell_candidates)}." if results else "Need watchlist signals first.",
+                }
+
+            result = await asyncio.to_thread(_rotate)
+            return {"ok": True, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Webhook Signal Forwarding ─────────────────────────
+
+    @app.post("/api/webhook/configure")
+    async def configure_webhook(body: dict):
+        """Configure webhook URL for signal forwarding."""
+        url = body.get("url", "")
+        state._webhook_url = url
+        state._webhook_enabled = bool(url)
+        return {"ok": True, "enabled": state._webhook_enabled, "url": url}
+
+    @app.get("/api/webhook/status")
+    async def webhook_status():
+        return {
+            "ok": True,
+            "enabled": getattr(state, "_webhook_enabled", False),
+            "url": getattr(state, "_webhook_url", ""),
+        }
+
+    @app.post("/api/webhook/test")
+    async def test_webhook():
+        url = getattr(state, "_webhook_url", "")
+        if not url:
+            return {"ok": False, "error": "No webhook URL configured"}
+        try:
+            import httpx
+            payload = {
+                "type": "btcdump_signal",
+                "symbol": state.coin_manager.active_symbol,
+                "direction": state.coin_manager.active_signal_data.get("direction", "HOLD"),
+                "confidence": state.coin_manager.active_signal_data.get("confidence", 0),
+                "price": state.coin_manager.active_signal_data.get("current_price", 0),
+                "timestamp": datetime.now().isoformat() if True else "",
+            }
+            async with httpx.AsyncClient(timeout=5) as client:
+                r = await client.post(url, json=payload)
+                return {"ok": True, "status_code": r.status_code}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

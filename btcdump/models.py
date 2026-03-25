@@ -234,6 +234,50 @@ class ModelPipeline:
 
         return prediction, confidence, preds
 
+    def predict_with_intervals(
+        self, ensemble: TrainedEnsemble, raw_df: pd.DataFrame,
+    ) -> Dict:
+        """Predict with confidence intervals using ensemble disagreement.
+
+        Returns prediction range at 68% and 95% confidence levels.
+        """
+        enriched = indicators.compute_all(raw_df.copy(), self._config.indicators)
+        latest = self._feature_eng.build_latest(enriched)
+        scaled = ensemble.scaler.transform(latest)
+
+        preds: Dict[str, float] = {}
+        for name, model in ensemble.models.items():
+            preds[name] = float(model.predict(scaled)[0])
+
+        prediction = sum(preds[n] * ensemble.weights[n] for n in preds)
+        current_price = float(raw_df["close"].iloc[-1])
+
+        pred_arr = np.array(list(preds.values()))
+        std = float(np.std(pred_arr))
+
+        # Also use historical MAPE to estimate error
+        mape_factor = ensemble.avg_mape  # e.g., 0.015 = 1.5% error
+        historical_std = current_price * mape_factor
+
+        # Combined uncertainty: max of ensemble spread and historical error
+        combined_std = max(std, historical_std)
+
+        return {
+            "prediction": round(prediction, 6),
+            "current_price": round(current_price, 6),
+            "individual": {k: round(v, 6) for k, v in preds.items()},
+            "ensemble_std": round(std, 6),
+            "ci_68": {
+                "low": round(prediction - combined_std, 6),
+                "high": round(prediction + combined_std, 6),
+            },
+            "ci_95": {
+                "low": round(prediction - 2 * combined_std, 6),
+                "high": round(prediction + 2 * combined_std, 6),
+            },
+            "prediction_range_pct": round(2 * combined_std / current_price * 100, 2),
+        }
+
     # --- Persistence ---
 
     def save(self, ensemble: TrainedEnsemble, path: Optional[Path] = None) -> Path:

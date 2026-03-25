@@ -242,6 +242,7 @@ function updateSignalUI(d) {
     updateFcContext();
     loadSLTP(d.symbol || activeSymbol);
     loadRegime(d.symbol || activeSymbol);
+    loadPredictionRange(d.symbol || activeSymbol);
 }
 
 // RSI Semi-circle Gauge
@@ -713,6 +714,55 @@ async function updateOutcomes() {
             loadSignalHistory();
         }
     } catch(e) {}
+}
+
+// ── Prediction Range ──
+async function loadPredictionRange(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/prediction-range`);
+        const j = await r.json();
+        if (!j.ok) return;
+        const el = document.getElementById('predRange');
+        if (el) {
+            el.textContent = `68%: $${fmtP(j.ci_68.low)}-$${fmtP(j.ci_68.high)} (±${j.prediction_range_pct}%)`;
+            el.style.display = '';
+            el.title = `95% range: $${fmtP(j.ci_95.low)}-$${fmtP(j.ci_95.high)}\nModels: ${Object.entries(j.individual).map(([k,v]) => `${k}=$${fmtP(v)}`).join(', ')}`;
+        }
+    } catch(e) {}
+}
+
+// ── Momentum Rotation ──
+async function loadMomentumRotation() {
+    try {
+        const r = await fetch('/api/momentum-rotation');
+        const j = await r.json();
+        if (!j.ok) return;
+
+        let h = `<div style="padding:6px 14px;font-size:10px;border-bottom:1px solid var(--border)">
+            <strong style="color:var(--accent)">${j.summary}</strong>
+        </div>`;
+        h += '<table class="comparison-table"><thead><tr><th>Coin</th><th>Score</th><th>Mom</th><th>Regime</th><th>Vol</th><th>RS</th><th>1d%</th><th></th></tr></thead><tbody>';
+        j.all.forEach((c, i) => {
+            const isBuy = i < 3;
+            const isSell = i >= j.all.length - 3;
+            const bg = isBuy ? 'rgba(38,166,154,0.05)' : isSell ? 'rgba(239,83,80,0.05)' : '';
+            const scoreColor = c.momentum_score > 0 ? 'var(--green)' : 'var(--red)';
+            h += `<tr style="background:${bg}">
+                <td><strong>${c.baseAsset}</strong>${isBuy ? ' <span style="color:var(--green);font-size:8px">BUY</span>' : isSell ? ' <span style="color:var(--red);font-size:8px">AVOID</span>' : ''}</td>
+                <td style="color:${scoreColor};font-weight:700">${c.momentum_score}</td>
+                <td>${c.momentum_raw}</td>
+                <td>${c.regime}</td>
+                <td>${c.volume}x</td>
+                <td>${c.rs_vs_btc >= 0 ? '+' : ''}${c.rs_vs_btc}%</td>
+                <td class="change-cell ${c.ret_1d >= 0 ? 'up' : 'down'}">${c.ret_1d >= 0 ? '+' : ''}${c.ret_1d}%</td>
+                <td><button class="btn btn-sm" onclick="selectCoin('${c.symbol}');switchMode('single')">Go</button></td>
+            </tr>`;
+        });
+        h += '</tbody></table>';
+
+        // Show in leaderboard content area
+        document.getElementById('leaderboardResults').innerHTML = h;
+    } catch(e) { toast('Rotation failed', 'error'); }
 }
 
 // ── AI Trade Narrative ──
