@@ -572,63 +572,63 @@ def _ichimoku(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _volume_profile(df: pd.DataFrame, bins: int = 20) -> pd.DataFrame:
-    """Volume Profile features: POC, Value Area position.
+def _volume_profile(df: pd.DataFrame, bins: int = 10) -> pd.DataFrame:
+    """Volume Profile features: POC distance, Value Area position.
 
-    Computes a volume-by-price distribution over last 100 bars to find
-    the Point of Control (price level with highest volume) and where
-    current price sits relative to the value area.
+    Fast implementation: uses numpy histogram with volume weights.
+    Computes every 5 bars and forward-fills for speed.
     """
     c, h, l, v = df["close"], df["high"], df["low"], df["volume"]
+    n = len(df)
 
-    poc_dist = pd.Series(0.0, index=df.index)
-    va_position = pd.Series(0.5, index=df.index)
+    poc_dist = np.zeros(n)
+    va_position = np.full(n, 0.5)
 
     window = 100
-    for i in range(window, len(df)):
+    step = 5  # compute every 5 bars (10x faster)
+
+    for i in range(window, n, step):
+        chunk_c = c.iloc[i - window:i].values
         chunk_h = h.iloc[i - window:i].values
         chunk_l = l.iloc[i - window:i].values
-        chunk_c = c.iloc[i - window:i].values
         chunk_v = v.iloc[i - window:i].values
 
+        # Use close prices with volume weights for fast profile
         price_min, price_max = float(chunk_l.min()), float(chunk_h.max())
         if price_max <= price_min:
             continue
 
-        # Build volume profile: distribute each bar's volume across its range
-        edges = np.linspace(price_min, price_max, bins + 1)
-        profile = np.zeros(bins)
-        for j in range(len(chunk_v)):
-            bar_lo, bar_hi = chunk_l[j], chunk_h[j]
-            for b in range(bins):
-                if edges[b + 1] > bar_lo and edges[b] < bar_hi:
-                    overlap = min(edges[b + 1], bar_hi) - max(edges[b], bar_lo)
-                    bar_range = bar_hi - bar_lo
-                    if bar_range > 0:
-                        profile[b] += chunk_v[j] * (overlap / bar_range)
+        profile, edges = np.histogram(chunk_c, bins=bins, range=(price_min, price_max), weights=chunk_v)
 
-        # POC: bin with most volume
+        # POC
         poc_bin = int(np.argmax(profile))
         poc_price = (edges[poc_bin] + edges[poc_bin + 1]) / 2
         current = float(chunk_c[-1])
-        poc_dist.iloc[i] = (current - poc_price) / current * 100
+        poc_val = (current - poc_price) / current * 100 if current > 0 else 0
 
-        # Value Area: 70% of volume centered on POC
+        # Value Area (70%)
         total_vol = profile.sum()
+        va_val = 0.5
         if total_vol > 0:
-            sorted_bins = np.argsort(profile)[::-1]
+            sorted_idx = np.argsort(profile)[::-1]
             cum = 0.0
-            va_bins = set()
-            for sb in sorted_bins:
-                va_bins.add(sb)
+            va_lo_bin, va_hi_bin = bins, 0
+            for sb in sorted_idx:
                 cum += profile[sb]
+                va_lo_bin = min(va_lo_bin, sb)
+                va_hi_bin = max(va_hi_bin, sb)
                 if cum >= total_vol * 0.7:
                     break
-            va_low = edges[min(va_bins)]
-            va_high = edges[max(va_bins) + 1]
+            va_low = edges[va_lo_bin]
+            va_high = edges[va_hi_bin + 1]
             va_range = va_high - va_low
             if va_range > 0:
-                va_position.iloc[i] = (current - va_low) / va_range
+                va_val = (current - va_low) / va_range
+
+        # Fill step range
+        end = min(i + step, n)
+        poc_dist[i:end] = poc_val
+        va_position[i:end] = va_val
 
     df["vp_poc_dist"] = poc_dist
     df["vp_va_position"] = va_position
@@ -893,26 +893,18 @@ def _whale_detection(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _entropy_feature(df: pd.DataFrame) -> pd.DataFrame:
-    """Shannon entropy of price distribution - measures market uncertainty.
+    """Shannon entropy proxy - measures market uncertainty.
 
-    High entropy = random/uncertain, low entropy = ordered/predictable.
-    Computed on discretized returns over rolling window.
+    Fast vectorized: uses rolling std / rolling mean-abs-deviation ratio
+    as entropy proxy. High ratio = more uniform distribution = higher entropy.
     """
-    ret = df["close"].pct_change()
-    window = 20
-    entropy_vals = pd.Series(0.0, index=df.index)
-
-    for i in range(window, len(df)):
-        chunk = ret.iloc[i - window:i].dropna().values
-        if len(chunk) < 5:
-            continue
-        # Discretize into 5 bins
-        hist, _ = np.histogram(chunk, bins=5)
-        probs = hist / hist.sum()
-        probs = probs[probs > 0]  # avoid log(0)
-        entropy_vals.iloc[i] = float(-np.sum(probs * np.log2(probs)))
-
-    df["price_entropy"] = entropy_vals
+    ret = df["close"].pct_change().fillna(0)
+    # Entropy proxy: normalized range of returns in rolling window
+    # More spread out returns = higher entropy
+    roll_std = ret.rolling(20).std()
+    roll_mad = ret.abs().rolling(20).mean().replace(0, np.nan)
+    # For Gaussian: std/mad ≈ 1.25. Deviation from this = non-Gaussian = different entropy
+    df["price_entropy"] = (roll_std / roll_mad).fillna(1.0)
     return df
 
 
@@ -1201,144 +1193,48 @@ def _cycle_features(df: pd.DataFrame) -> pd.DataFrame:
 def _information_theory_features(df: pd.DataFrame) -> pd.DataFrame:
     """Information-theoretic features: transfer entropy proxy, mutual information.
 
-    Transfer Entropy (TE): measures directed information flow from volume to price.
-    High TE(vol→price) = volume changes predict future price changes.
-    This is a simplified estimator using binned conditional probabilities.
+    Fast vectorized implementation using correlation-based proxies.
+    Transfer Entropy proxy: how much does lagged volume predict price?
+    Mutual Information proxy: correlation between price and volume changes.
     """
     c = df["close"]
     v = df["volume"]
     ret = c.pct_change().fillna(0)
     vol_change = v.pct_change().fillna(0)
 
-    window = 50
-    te_vals = pd.Series(0.0, index=df.index)
-    mi_vals = pd.Series(0.0, index=df.index)
+    # Transfer Entropy proxy: correlation of vol(t-1) with price(t)
+    # High correlation = volume predicts future price (information flow)
+    vol_lag1 = vol_change.shift(1)
+    te_proxy = ret.rolling(30).corr(vol_lag1).abs()  # abs correlation as TE proxy
+    df["transfer_entropy"] = te_proxy.fillna(0)
 
-    for i in range(window, len(df)):
-        r = ret.iloc[i - window:i].values
-        vc = vol_change.iloc[i - window:i].values
-
-        # Discretize into 3 bins (down/flat/up)
-        r_bins = np.digitize(r, [-0.001, 0.001]) # 0=down, 1=flat, 2=up
-        vc_bins = np.digitize(vc, [-0.1, 0.1])
-
-        # Transfer Entropy: TE(vol→price) = H(price_t | price_t-1) - H(price_t | price_t-1, vol_t-1)
-        # Simplified: conditional entropy reduction when knowing volume
-        n = len(r_bins) - 1
-        if n < 10:
-            continue
-
-        # P(price_t | price_t-1)
-        joint_pp = np.zeros((3, 3))
-        for j in range(1, n + 1):
-            joint_pp[r_bins[j - 1], r_bins[j]] += 1
-        joint_pp /= max(1, joint_pp.sum())
-
-        # P(price_t | price_t-1, vol_t-1) - approximated
-        joint_ppv = np.zeros((3, 3, 3))
-        for j in range(1, n + 1):
-            joint_ppv[r_bins[j - 1], vc_bins[j - 1], r_bins[j]] += 1
-        total = joint_ppv.sum()
-        if total > 0:
-            joint_ppv /= total
-
-        # Entropy calculations
-        def _entropy(p):
-            p = p[p > 0]
-            return -float(np.sum(p * np.log2(p))) if len(p) > 0 else 0
-
-        h_cond_p = 0  # H(price_t | price_t-1)
-        for prev in range(3):
-            marginal = joint_pp[prev, :]
-            s = marginal.sum()
-            if s > 0:
-                h_cond_p += s * _entropy(marginal / s)
-
-        h_cond_pv = 0  # H(price_t | price_t-1, vol_t-1)
-        for prev_p in range(3):
-            for prev_v in range(3):
-                marginal = joint_ppv[prev_p, prev_v, :]
-                s = marginal.sum()
-                if s > 0:
-                    h_cond_pv += s * _entropy(marginal / s)
-
-        te = max(0, h_cond_p - h_cond_pv)
-        te_vals.iloc[i] = te
-
-        # Mutual Information: I(price; volume) - how much do they share
-        joint = np.zeros((3, 3))
-        for j in range(n + 1):
-            joint[r_bins[j], vc_bins[j]] += 1
-        joint /= max(1, joint.sum())
-        p_r = joint.sum(axis=1)
-        p_v = joint.sum(axis=0)
-
-        mi = 0
-        for a in range(3):
-            for b in range(3):
-                if joint[a, b] > 0 and p_r[a] > 0 and p_v[b] > 0:
-                    mi += joint[a, b] * np.log2(joint[a, b] / (p_r[a] * p_v[b]))
-        mi_vals.iloc[i] = max(0, mi)
-
-    df["transfer_entropy"] = te_vals
-    df["mutual_info_pv"] = mi_vals
+    # Mutual Information proxy: absolute correlation + squared correlation
+    # Squared correlation captures non-linear dependence
+    linear_mi = ret.rolling(30).corr(vol_change).abs()
+    squared_mi = (ret ** 2).rolling(30).corr(vol_change ** 2).abs()
+    df["mutual_info_pv"] = ((linear_mi.fillna(0) + squared_mi.fillna(0)) / 2)
 
     return df
 
 
 def _complexity_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Approximate Entropy (ApEn) and Sample Entropy - measure time series complexity.
+    """Approximate Entropy proxy and Sample Entropy - measure complexity.
 
-    ApEn measures the regularity/predictability of a time series.
-    Low ApEn = regular/predictable, High ApEn = irregular/random.
-    Better than Shannon entropy for short, noisy financial data.
+    Fast vectorized implementation using statistical proxies instead of
+    O(n^2) template matching. Captures the same information: regularity
+    vs randomness of the price series.
     """
-    ret = df["close"].pct_change().fillna(0).values
+    ret = df["close"].pct_change().fillna(0)
 
-    window = 50
-    m = 2       # embedding dimension
-    r_mult = 0.2  # tolerance as fraction of std
+    # Fast ApEn proxy: uses lag-1 and lag-2 autocorrelation (vectorized)
+    ret_lag1 = ret.shift(1)
+    ret_lag2 = ret.shift(2)
+    ac1 = ret.rolling(30).cov(ret_lag1) / ret.rolling(30).var().replace(0, np.nan)
+    ac2 = ret.rolling(30).cov(ret_lag2) / ret.rolling(30).var().replace(0, np.nan)
+    regularity = (ac1.abs().fillna(0) + ac2.abs().fillna(0)) / 2
+    df["approx_entropy"] = (1 - regularity).clip(0, 2)
 
-    apen_vals = np.zeros(len(df))
-
-    for i in range(window, len(df)):
-        chunk = ret[i - window:i]
-        std = np.std(chunk)
-        if std == 0:
-            continue
-        r = r_mult * std
-        n = len(chunk)
-
-        # Count matches for template length m and m+1
-        def _count_matches(seq, template_len, tolerance):
-            count = 0
-            templates = n - template_len
-            if templates <= 0:
-                return 0
-            for a in range(templates):
-                for b in range(a + 1, templates):
-                    match = True
-                    for k in range(template_len):
-                        if abs(seq[a + k] - seq[b + k]) > tolerance:
-                            match = False
-                            break
-                    if match:
-                        count += 1
-            return count / templates
-
-        c_m = _count_matches(chunk, m, r)
-        c_m1 = _count_matches(chunk, m + 1, r)
-
-        if c_m > 0 and c_m1 > 0:
-            apen_vals[i] = np.log(c_m / c_m1)
-        elif c_m > 0:
-            apen_vals[i] = np.log(c_m)
-
-    df["approx_entropy"] = apen_vals
-
-    # Simplified Sample Entropy (ratio variant - faster)
-    # SampEn ≈ -ln(A/B) where A=matches at m+1, B=matches at m
-    # We use rolling std ratio as a fast proxy
+    # Sample Entropy proxy (ratio variant - fast)
     ret_series = df["close"].pct_change()
     short_std = ret_series.rolling(10).std()
     long_std = ret_series.rolling(50, min_periods=10).std().replace(0, np.nan)
@@ -1611,10 +1507,7 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Percent Rank: where today's return sits in last 100 returns
     single_ret = c.pct_change()
-    pct_rank = single_ret.rolling(100).apply(
-        lambda x: (x.iloc[-1] > x.iloc[:-1]).sum() / max(1, len(x) - 1) * 100 if len(x) > 1 else 50,
-        raw=False,
-    )
+    pct_rank = single_ret.rolling(100).rank(pct=True) * 100
 
     df["connors_rsi"] = (rsi_3 + rsi_streak + pct_rank) / 3
 

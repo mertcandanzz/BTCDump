@@ -16,7 +16,7 @@ class DataConfig:
     default_watchlist: Tuple[str, ...] = (
         "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
     )
-    candle_limit: int = 1000
+    candle_limit: int = 500
     mini_chart_candles: int = 50
     request_timeout: int = 10
     max_retries: int = 3
