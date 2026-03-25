@@ -176,7 +176,7 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
     FEATURE_DESC = {
         "close":"Closing price","volume":"Trading volume","RSI":"Relative Strength Index (14)","MACD":"MACD line (12-26 EMA)","volume_ratio":"Volume / 20-period avg","ma5":"5-period SMA","ma20":"20-period SMA","ma50":"50-period SMA","BB_upper":"Upper Bollinger Band","BB_lower":"Lower Bollinger Band","ATR":"Average True Range (14)","stoch_k":"Stochastic %K (14)","stoch_d":"Stochastic %D (3)","ADX":"Avg Directional Index (14)","OBV_norm":"On-Balance Volume z-score","ROC":"Rate of Change (10)","williams_r":"Williams %R (14)","CCI":"Commodity Channel Index (20)","MFI":"Money Flow Index (14)","returns_1":"1-candle return","returns_5":"5-candle return","price_momentum":"10-bar price momentum","volatility_10":"10-period return volatility","high_low_range":"Candle range % of price","parkinson_vol":"Parkinson volatility","atr_ratio":"ATR expansion ratio","body_ratio":"Candle body ratio (0=doji,1=full)","buying_pressure":"Close position in range","upper_shadow":"Upper wick ratio","lower_shadow":"Lower wick ratio","bb_pct_b":"Bollinger %B position","bb_width":"BB width (squeeze)","vol_delta":"Volume delta (buy/sell)","ad_norm":"Accumulation/Distribution","hh_streak":"Higher highs streak","ll_streak":"Lower lows streak","dist_from_high":"Distance from 20-bar high","dist_from_low":"Distance from 20-bar low","rsi_momentum":"RSI acceleration","macd_hist_slope":"MACD histogram slope","close_ma_ratio":"Price vs MA20 ratio","price_zscore":"Price z-score","vwap_dist":"VWAP distance in ATR",
         # v5.0 Pro Features
-        "efficiency_ratio":"Kaufman ER - trend efficiency (0=chop,1=clean trend)","choppiness":"Choppiness Index (>61.8=chop,<38.2=trend)","adx_slope":"ADX 5-bar change (trend strengthening/weakening)","tsi":"True Strength Index (double-smoothed momentum)","rsi_divergence":"Price-RSI divergence (positive=bullish div)","returns_10":"10-candle return","returns_20":"20-candle return","momentum_quality":"Directional Sharpe (return/volatility)","garch_proxy":"GARCH proxy (short/long vol ratio, >1=expanding)","vol_of_vol":"Volatility of volatility (regime transition signal)","yang_zhang_vol":"Yang-Zhang vol (state-of-art OHLCV estimator)","volume_trend":"Volume slope (rising=accumulation)","amihud_illiq":"Amihud illiquidity (higher=less liquid)","hour_sin":"Hour sine (cyclical time feature)","hour_cos":"Hour cosine (cyclical time feature)","dow_sin":"Day-of-week sine (weekend/weekday cycle)","dow_cos":"Day-of-week cosine","skewness_20":"Return skewness (neg=left tail risk)","kurtosis_20":"Return kurtosis (high=extreme moves likely)","keltner_position":"Keltner Channel position (ATR-based bands)","squeeze_ratio":"BB/Keltner squeeze (<1=squeeze,breakout imminent)","engulfing_score":"Engulfing pattern strength (pos=bullish)","consecutive_dir":"Consecutive candle direction streak","ofi_14":"Order Flow Imbalance 14-bar (buy vs sell pressure proxy)","pv_divergence":"Price-Volume divergence (high=thin move, low=confirmed)","ichimoku_tk":"Ichimoku Tenkan-Kijun cross (% of price, pos=bullish)","ichimoku_cloud_pos":"Price position vs Ichimoku cloud (>0=above)","ichimoku_cloud_width":"Ichimoku cloud thickness (% of price, thin=weak S/R)","ichimoku_chikou":"Chikou span: price vs 26 bars ago (% change)","ichimoku_kijun_dist":"Distance from Kijun-sen baseline (mean-reversion)","vp_poc_dist":"Distance from Volume POC (Point of Control, %)","vp_va_position":"Position within Value Area (0=low, 1=high, >1=above)","pivot_dist":"Distance from pivot point (% of price)","pivot_r1_dist":"Distance to R1 resistance (%)","pivot_s1_dist":"Distance to S1 support (%)","pivot_position":"Position within S2-R2 range (0=S2, 1=R2)","pattern_doji":"Doji strength (1=perfect doji, indecision)","pattern_hammer":"Hammer/HangingMan strength (bullish reversal)","pattern_shooting_star":"Shooting Star strength (bearish reversal)","pattern_three_soldiers":"Three White Soldiers (strong bull continuation)","pattern_three_crows":"Three Black Crows (strong bear continuation)","pattern_morning_star":"Morning Star (bullish reversal, 3-candle)","pattern_evening_star":"Evening Star (bearish reversal, 3-candle)","trade_intensity":"Volume per unit price move z-score (high=absorption)","pin_bar_score":"Pin bar strength (pos=bullish, neg=bearish reversal)","gap_pct":"Gap % from prev close to open (crypto overnight gaps)","intrabar_vol_ratio":"Total range / body size (high=choppy intrabar)","close_position_avg":"5-bar avg close position in range (persistent pressure)","whale_score":"Whale activity score (high vol + small body = absorption)","smart_money_div":"Smart money divergence (1=bullish, -1=bearish accumulation/distribution)","price_entropy":"Shannon entropy of returns (high=uncertain/random, low=predictable)","hurst_exponent":"Hurst exponent (>0.5=trending, <0.5=mean-reverting, 0.5=random)","autocorr_1":"Return auto-correlation lag-1 (pos=momentum, neg=reversal)","autocorr_5":"Return auto-correlation lag-5 (weekly pattern on 1h data)","di_ratio":"DI+/DI- ratio (>1=bullish dominance, <1=bearish)","di_spread":"DI+/DI- normalized spread (-1 to +1)","variance_ratio":"Lo-MacKinlay variance ratio (>1=trending, <1=mean-reverting)",
+        "efficiency_ratio":"Kaufman ER - trend efficiency (0=chop,1=clean trend)","choppiness":"Choppiness Index (>61.8=chop,<38.2=trend)","adx_slope":"ADX 5-bar change (trend strengthening/weakening)","tsi":"True Strength Index (double-smoothed momentum)","rsi_divergence":"Price-RSI divergence (positive=bullish div)","returns_10":"10-candle return","returns_20":"20-candle return","momentum_quality":"Directional Sharpe (return/volatility)","garch_proxy":"GARCH proxy (short/long vol ratio, >1=expanding)","vol_of_vol":"Volatility of volatility (regime transition signal)","yang_zhang_vol":"Yang-Zhang vol (state-of-art OHLCV estimator)","volume_trend":"Volume slope (rising=accumulation)","amihud_illiq":"Amihud illiquidity (higher=less liquid)","hour_sin":"Hour sine (cyclical time feature)","hour_cos":"Hour cosine (cyclical time feature)","dow_sin":"Day-of-week sine (weekend/weekday cycle)","dow_cos":"Day-of-week cosine","skewness_20":"Return skewness (neg=left tail risk)","kurtosis_20":"Return kurtosis (high=extreme moves likely)","keltner_position":"Keltner Channel position (ATR-based bands)","squeeze_ratio":"BB/Keltner squeeze (<1=squeeze,breakout imminent)","engulfing_score":"Engulfing pattern strength (pos=bullish)","consecutive_dir":"Consecutive candle direction streak","ofi_14":"Order Flow Imbalance 14-bar (buy vs sell pressure proxy)","pv_divergence":"Price-Volume divergence (high=thin move, low=confirmed)","ichimoku_tk":"Ichimoku Tenkan-Kijun cross (% of price, pos=bullish)","ichimoku_cloud_pos":"Price position vs Ichimoku cloud (>0=above)","ichimoku_cloud_width":"Ichimoku cloud thickness (% of price, thin=weak S/R)","ichimoku_chikou":"Chikou span: price vs 26 bars ago (% change)","ichimoku_kijun_dist":"Distance from Kijun-sen baseline (mean-reversion)","vp_poc_dist":"Distance from Volume POC (Point of Control, %)","vp_va_position":"Position within Value Area (0=low, 1=high, >1=above)","pivot_dist":"Distance from pivot point (% of price)","pivot_r1_dist":"Distance to R1 resistance (%)","pivot_s1_dist":"Distance to S1 support (%)","pivot_position":"Position within S2-R2 range (0=S2, 1=R2)","pattern_doji":"Doji strength (1=perfect doji, indecision)","pattern_hammer":"Hammer/HangingMan strength (bullish reversal)","pattern_shooting_star":"Shooting Star strength (bearish reversal)","pattern_three_soldiers":"Three White Soldiers (strong bull continuation)","pattern_three_crows":"Three Black Crows (strong bear continuation)","pattern_morning_star":"Morning Star (bullish reversal, 3-candle)","pattern_evening_star":"Evening Star (bearish reversal, 3-candle)","trade_intensity":"Volume per unit price move z-score (high=absorption)","pin_bar_score":"Pin bar strength (pos=bullish, neg=bearish reversal)","gap_pct":"Gap % from prev close to open (crypto overnight gaps)","intrabar_vol_ratio":"Total range / body size (high=choppy intrabar)","close_position_avg":"5-bar avg close position in range (persistent pressure)","whale_score":"Whale activity score (high vol + small body = absorption)","smart_money_div":"Smart money divergence (1=bullish, -1=bearish accumulation/distribution)","price_entropy":"Shannon entropy of returns (high=uncertain/random, low=predictable)","kama_dist":"KAMA distance (Kaufman Adaptive MA, adapts to regime)","dema_dist":"DEMA distance (Double EMA, faster trend response)","tema_dist":"TEMA distance (Triple EMA, minimal lag)","kama_slope":"KAMA 3-bar slope (adaptive trend direction)","seasonal_hour_bias":"Hour-of-day seasonal return bias (z-score)","seasonal_dow_bias":"Day-of-week seasonal return bias (z-score)","hurst_exponent":"Hurst exponent (>0.5=trending, <0.5=mean-reverting, 0.5=random)","autocorr_1":"Return auto-correlation lag-1 (pos=momentum, neg=reversal)","autocorr_5":"Return auto-correlation lag-5 (weekly pattern on 1h data)","di_ratio":"DI+/DI- ratio (>1=bullish dominance, <1=bearish)","di_spread":"DI+/DI- normalized spread (-1 to +1)","variance_ratio":"Lo-MacKinlay variance ratio (>1=trending, <1=mean-reverting)",
     }
 
     @app.get("/api/feature-importance")
@@ -664,6 +664,138 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
                 return detect_anomalies(data.df)
             result = await asyncio.to_thread(_detect)
             return {"ok": True, **result, "symbol": symbol}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Seasonality Profile ────────────────────────────────
+
+    @app.get("/api/coin/{symbol}/seasonality")
+    async def get_seasonality(symbol: str):
+        try:
+            def _calc():
+                from btcdump.indicators import compute_seasonality_profile
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                return compute_seasonality_profile(data.df)
+            result = await asyncio.to_thread(_calc)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Monte Carlo Simulation ───────────────────────────
+
+    @app.get("/api/monte-carlo")
+    async def monte_carlo(simulations: int = 1000, horizon: int = 30):
+        """Monte Carlo simulation of portfolio outcomes."""
+        try:
+            import numpy as np_mc
+
+            trades = state.paper_trader.get_history()
+            if len(trades) < 3:
+                # Use signal history if no trades
+                records = state.signal_history.get_history(limit=100)
+                returns = []
+                for r in records:
+                    if r.get("price_after_24h") and r.get("price_at_signal"):
+                        ret = (r["price_after_24h"] - r["price_at_signal"]) / r["price_at_signal"]
+                        returns.append(ret)
+                if not returns:
+                    returns = [0.001, -0.001, 0.002, -0.0015, 0.0005]  # default
+            else:
+                returns = [t["pnl_pct"] / 100 for t in trades]
+
+            returns = np_mc.array(returns)
+            mu = float(returns.mean())
+            sigma = float(returns.std()) or 0.01
+
+            balance = 10000
+            simulations = min(simulations, 5000)
+
+            # Run simulations
+            final_values = []
+            paths_sample = []  # keep 10 sample paths
+            for i in range(simulations):
+                path = [balance]
+                val = balance
+                for _ in range(horizon):
+                    ret = np_mc.random.normal(mu, sigma)
+                    val *= (1 + ret)
+                    path.append(round(float(val), 2))
+                final_values.append(float(val))
+                if i < 10:
+                    paths_sample.append(path)
+
+            final_arr = np_mc.array(final_values)
+            percentiles = {
+                "p5": round(float(np_mc.percentile(final_arr, 5)), 2),
+                "p25": round(float(np_mc.percentile(final_arr, 25)), 2),
+                "p50": round(float(np_mc.percentile(final_arr, 50)), 2),
+                "p75": round(float(np_mc.percentile(final_arr, 75)), 2),
+                "p95": round(float(np_mc.percentile(final_arr, 95)), 2),
+            }
+
+            return {
+                "ok": True,
+                "simulations": simulations,
+                "horizon_trades": horizon,
+                "initial_balance": balance,
+                "mean_final": round(float(final_arr.mean()), 2),
+                "std_final": round(float(final_arr.std()), 2),
+                "percentiles": percentiles,
+                "prob_profit": round(float((final_arr > balance).mean()) * 100, 1),
+                "prob_double": round(float((final_arr > balance * 2).mean()) * 100, 1),
+                "prob_ruin": round(float((final_arr < balance * 0.5).mean()) * 100, 1),
+                "sample_paths": paths_sample,
+                "avg_return_per_trade": round(mu * 100, 3),
+                "std_per_trade": round(sigma * 100, 3),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Dashboard Summary ────────────────────────────────
+
+    @app.get("/api/dashboard")
+    async def get_dashboard():
+        """One-page summary of all platform intelligence."""
+        try:
+            cache = state.coin_manager.signal_cache
+            active = state.coin_manager.active_signal_data
+            stats = state.signal_history.get_stats()
+
+            # Best opportunity
+            best = None
+            best_score = 0
+            for sym, data in cache.items():
+                if data.get("status") != "ready":
+                    continue
+                conf = data.get("confidence", 0)
+                dir_val = data.get("direction", "HOLD")
+                score = conf * (1.5 if "STRONG" in dir_val else 1.0 if dir_val != "HOLD" else 0.3)
+                if score > best_score:
+                    best_score = score
+                    best = data
+
+            return {
+                "ok": True,
+                "active_coin": {
+                    "symbol": state.coin_manager.active_symbol,
+                    "direction": active.get("direction", "--"),
+                    "confidence": active.get("confidence", 0),
+                    "price": active.get("current_price", 0),
+                },
+                "best_opportunity": {
+                    "symbol": best.get("symbol", "--") if best else "--",
+                    "direction": best.get("direction", "--") if best else "--",
+                    "confidence": best.get("confidence", 0) if best else 0,
+                } if best else None,
+                "signal_accuracy": stats.get("accuracy", 0),
+                "total_signals": stats.get("total_signals", 0),
+                "watchlist_size": len(state.coin_manager.watchlist),
+                "cached_signals": len(cache),
+                "features": len(state.config.features.feature_columns),
+                "interval": state.coin_manager.active_interval,
+            }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

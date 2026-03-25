@@ -47,6 +47,8 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _statistical_features(df)
     df = _whale_detection(df)
     df = _entropy_feature(df)
+    df = _adaptive_ma_features(df)
+    df = _seasonality_features(df)
     return df.copy()  # final defragment
 
 
@@ -1010,6 +1012,123 @@ def detect_trend_lines(df: pd.DataFrame, lookback: int = 100) -> list[dict]:
         })
 
     return lines
+
+
+def _adaptive_ma_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Adaptive Moving Averages: KAMA, DEMA, TEMA.
+
+    These adapt to market conditions better than fixed-period MAs.
+    Features are normalized as distance from price.
+    """
+    c = df["close"]
+
+    # ── KAMA (Kaufman Adaptive MA) ──
+    # Uses efficiency ratio to adapt smoothing constant
+    n = 10
+    fast_sc = 2 / (2 + 1)    # fast EMA constant (period 2)
+    slow_sc = 2 / (30 + 1)   # slow EMA constant (period 30)
+
+    er = df.get("efficiency_ratio", pd.Series(0.5, index=df.index))
+    sc = (er * (fast_sc - slow_sc) + slow_sc) ** 2
+
+    kama = pd.Series(np.nan, index=df.index)
+    kama.iloc[n - 1] = float(c.iloc[n - 1])
+    for i in range(n, len(df)):
+        if np.isnan(kama.iloc[i - 1]):
+            kama.iloc[i] = float(c.iloc[i])
+        else:
+            kama.iloc[i] = float(kama.iloc[i - 1] + sc.iloc[i] * (c.iloc[i] - kama.iloc[i - 1]))
+
+    df["kama_dist"] = (c - kama) / c.replace(0, np.nan) * 100
+
+    # ── DEMA (Double Exponential MA) ──
+    # DEMA = 2 * EMA(n) - EMA(EMA(n))
+    ema20 = c.ewm(span=20, adjust=False).mean()
+    dema = 2 * ema20 - ema20.ewm(span=20, adjust=False).mean()
+    df["dema_dist"] = (c - dema) / c.replace(0, np.nan) * 100
+
+    # ── TEMA (Triple Exponential MA) ──
+    # TEMA = 3*EMA - 3*EMA(EMA) + EMA(EMA(EMA))
+    ema1 = c.ewm(span=20, adjust=False).mean()
+    ema2 = ema1.ewm(span=20, adjust=False).mean()
+    ema3 = ema2.ewm(span=20, adjust=False).mean()
+    tema = 3 * ema1 - 3 * ema2 + ema3
+    df["tema_dist"] = (c - tema) / c.replace(0, np.nan) * 100
+
+    # ── KAMA Slope (trend direction from adaptive MA) ──
+    df["kama_slope"] = kama.diff(3) / c.replace(0, np.nan) * 100
+
+    return df
+
+
+def _seasonality_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Seasonality: how current hour/day compares to historical pattern.
+
+    Uses historical average return for the same hour-of-day and day-of-week
+    to create a seasonal bias feature.
+    """
+    if "time" not in df.columns:
+        df["seasonal_hour_bias"] = 0.0
+        df["seasonal_dow_bias"] = 0.0
+        return df
+
+    try:
+        ts = pd.to_datetime(df["time"])
+        ret = df["close"].pct_change() * 100
+
+        # Hour-of-day seasonality
+        hour = ts.dt.hour
+        hour_means = ret.groupby(hour).transform("mean")
+        hour_std = ret.rolling(50, min_periods=10).std().replace(0, 1)
+        df["seasonal_hour_bias"] = hour_means / hour_std
+
+        # Day-of-week seasonality
+        dow = ts.dt.dayofweek
+        dow_means = ret.groupby(dow).transform("mean")
+        df["seasonal_dow_bias"] = dow_means / hour_std
+    except Exception:
+        df["seasonal_hour_bias"] = 0.0
+        df["seasonal_dow_bias"] = 0.0
+
+    return df
+
+
+def compute_seasonality_profile(df: pd.DataFrame) -> dict:
+    """Compute hourly and daily return profiles for visualization."""
+    if "time" not in df.columns or len(df) < 100:
+        return {"hourly": {}, "daily": {}}
+
+    ts = pd.to_datetime(df["time"])
+    ret = df["close"].pct_change() * 100
+
+    # Hourly profile
+    hour = ts.dt.hour
+    hourly = {}
+    for h in range(24):
+        mask = hour == h
+        vals = ret[mask].dropna()
+        if len(vals) > 5:
+            hourly[h] = {
+                "avg_return": round(float(vals.mean()), 4),
+                "win_rate": round(float((vals > 0).mean()) * 100, 1),
+                "count": len(vals),
+            }
+
+    # Daily profile
+    dow = ts.dt.dayofweek
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    daily = {}
+    for d in range(7):
+        mask = dow == d
+        vals = ret[mask].dropna()
+        if len(vals) > 5:
+            daily[day_names[d]] = {
+                "avg_return": round(float(vals.mean()), 4),
+                "win_rate": round(float((vals > 0).mean()) * 100, 1),
+                "count": len(vals),
+            }
+
+    return {"hourly": hourly, "daily": daily}
 
 
 def compute_fibonacci_levels(df: pd.DataFrame, lookback: int = 100) -> list[dict]:

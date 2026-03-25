@@ -109,6 +109,10 @@ class FeatureConfig:
         "whale_score", "smart_money_div",
         # v5.0 Pro: Information Theory
         "price_entropy",
+        # v5.0 Pro: Adaptive Moving Averages
+        "kama_dist", "dema_dist", "tema_dist", "kama_slope",
+        # v5.0 Pro: Seasonality
+        "seasonal_hour_bias", "seasonal_dow_bias",
     )
 
 
