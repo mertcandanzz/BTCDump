@@ -585,6 +585,39 @@ async function loadPortfolio() {
     } catch(e) {}
 }
 
+// ── Multi-Timeframe UI ──
+async function loadMultiTF() {
+    const el = document.getElementById('mtfContent');
+    el.innerHTML = '<div style="padding:4px 14px;font-size:10px;color:var(--text-muted)">Loading 4 timeframes...</div>';
+    try {
+        const r = await fetch(`/api/coin/${activeSymbol}/multi-tf`);
+        const j = await r.json();
+        if (!j.ok) { el.innerHTML = `<div style="padding:4px 14px;font-size:10px;color:var(--red)">${j.error}</div>`; return; }
+
+        let h = '';
+        const tfs = ['15m', '1h', '4h', '1d'];
+        for (const tf of tfs) {
+            const d = j.timeframes[tf];
+            if (!d) continue;
+            const dir = d.direction || 'ERROR';
+            const cls = dir.includes('BUY') ? 'buy' : dir.includes('SELL') ? 'sell' : dir === 'HOLD' ? 'hold' : 'error';
+            const confColor = d.confidence > 60 ? 'var(--green)' : d.confidence > 40 ? 'var(--yellow)' : 'var(--red)';
+            h += `<div class="mtf-row" onclick="document.querySelector('.tf-pill[data-tf=\\'${tf}\\']')?.click()">
+                <span class="mtf-tf">${tf}</span>
+                <span class="mtf-badge ${cls}">${dir}</span>
+                <div class="mtf-conf"><div class="mtf-conf-fill" style="width:${d.confidence || 0}%;background:${confColor}"></div></div>
+                <span class="mtf-rsi" style="color:${rsiCol(d.rsi)}">${d.rsi || '--'}</span>
+            </div>`;
+        }
+
+        // Alignment badge
+        const aCls = j.alignment || 'neutral';
+        h += `<div class="mtf-alignment ${aCls}">${j.alignment_pct}% ${aCls.charAt(0).toUpperCase() + aCls.slice(1)}</div>`;
+
+        el.innerHTML = h;
+    } catch(e) { el.innerHTML = '<div style="padding:4px 14px;font-size:10px;color:var(--red)">Failed</div>'; }
+}
+
 // ── Watchlist Presets ──
 const PRESETS = {
     top10: ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","AVAXUSDT","TRXUSDT","LINKUSDT"],

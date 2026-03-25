@@ -144,6 +144,17 @@
                     </div>
                 </div>
 
+                <!-- Multi-Timeframe Analysis -->
+                <div class="mtf-section" id="mtfSection">
+                    <div class="signal-label" style="padding:8px 14px 4px;display:flex;justify-content:space-between;align-items:center">
+                        Multi-Timeframe
+                        <button class="btn btn-sm" onclick="loadMultiTF()">Load</button>
+                    </div>
+                    <div id="mtfContent" class="mtf-grid">
+                        <div class="mtf-placeholder" style="padding:4px 14px;font-size:10px;color:var(--text-muted)">Click Load to analyze 4 timeframes</div>
+                    </div>
+                </div>
+
                 <!-- Ensemble Weights with explanations -->
                 <div class="ensemble-section">
                     <div class="signal-label">Ensemble Weights <span class="ind-info" onclick="toggleEnsembleInfo(event)">?</span></div>
