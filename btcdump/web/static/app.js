@@ -94,8 +94,8 @@ function switchMode(mode) {
     document.getElementById('singleModeContent').style.display=mode==='single'?'':'none';
     document.getElementById('compareModeContent').style.display=mode==='compare'?'':'none';
     document.getElementById('dashboardModeContent').style.display=mode==='dashboard'?'':'none';
-    document.getElementById('mainLayout').classList.toggle('compare-mode',mode==='compare'||mode==='dashboard');
-    document.getElementById('leftPanel').style.display=mode==='dashboard'?'none':'';
+    document.getElementById('mainLayout').classList.toggle('compare-mode',mode==='compare');
+    document.getElementById('mainLayout').classList.toggle('dashboard-mode',mode==='dashboard');
     updateFcContext();
     if(mode==='compare'){renderWatchlistMgr();loadWatchlistOverview();loadMarketBreadth();}
     if(mode==='dashboard') loadDashboard();
@@ -1451,7 +1451,9 @@ async function checkAnomalies(sym) {
 // ── Dashboard ──
 async function loadDashboard() {
     const grid = document.getElementById('dashGrid');
+    if (!grid) { console.error('dashGrid not found'); return; }
     grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-muted)">Loading dashboard...</div>';
+    try {
 
     // Fetch all data in parallel
     const [healthR, fngR, marketR, dashR, perfR, breadthR] = await Promise.allSettled([
@@ -1577,6 +1579,14 @@ async function loadDashboard() {
     h += `</ul></div></div>`;
 
     grid.innerHTML = h;
+    } catch(e) {
+        console.error('Dashboard load error:', e);
+        grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted)">
+            <div style="font-size:14px;margin-bottom:8px">Dashboard</div>
+            <div style="font-size:11px">Could not load data. Server may be starting up.</div>
+            <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="loadDashboard()">Retry</button>
+        </div>`;
+    }
 }
 
 // ── Init ──

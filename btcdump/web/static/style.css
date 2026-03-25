@@ -79,6 +79,8 @@ main{display:grid;grid-template-columns:250px 1fr;flex:1;overflow:hidden}
 main.compare-mode{grid-template-columns:200px 1fr}
 main.collapsed{grid-template-columns:0px 1fr}
 main.collapsed #leftPanel{display:none}
+main.dashboard-mode{grid-template-columns:1fr}
+main.dashboard-mode #leftPanel{display:none}
 
 .panel-header{padding:8px 12px;font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
 .panel-hint{font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-muted)}
@@ -419,7 +421,8 @@ main.collapsed #leftPanel{display:none}
 .ts-notes{padding:6px 14px;font-size:10px;color:var(--text-dim);border-top:1px solid var(--border)}
 
 /* ── Dashboard Grid ── */
-.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;overflow:auto;height:100%}
+#dashboardModeContent{flex:1;overflow:auto}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;overflow:auto;min-height:0}
 .dash-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;overflow:hidden}
 .dash-card-title{font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
 .dash-card-body{font-size:11px}
