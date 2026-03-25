@@ -54,6 +54,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _complexity_features(df)
     df = _dfa_feature(df)
     df = _interaction_features(df)
+    df = _jump_detection(df)
     return df.copy()  # final defragment
 
 
@@ -1444,6 +1445,52 @@ def _interaction_features(df: pd.DataFrame) -> pd.DataFrame:
     squeeze = 1 - _safe_col("squeeze_ratio", 1).clip(0, 2) / 2
     cycle_phase = _safe_col("cycle_phase", 0)
     df["ix_squeeze_cycle"] = squeeze * cycle_phase.abs()
+
+    return df
+
+
+def _jump_detection(df: pd.DataFrame) -> pd.DataFrame:
+    """Detect price jumps vs continuous moves.
+
+    Jumps are sudden large moves that differ from normal diffusion.
+    Uses Barndorff-Nielsen & Shephard (2006) bipower variation approach.
+
+    jump_indicator: 1 = jump detected, 0 = continuous
+    jump_magnitude: size of detected jump (% of price)
+    continuous_vol: volatility excluding jumps (cleaner vol estimate)
+    """
+    c = df["close"]
+    ret = c.pct_change().fillna(0)
+    abs_ret = ret.abs()
+
+    # Realized variance (sum of squared returns)
+    window = 20
+    rv = (ret ** 2).rolling(window).sum()
+
+    # Bipower variation (product of consecutive absolute returns)
+    # BV = (pi/2) * sum(|r_t| * |r_{t-1}|)
+    bv = (np.pi / 2) * (abs_ret * abs_ret.shift(1)).rolling(window).sum()
+
+    # Jump component: RV - BV (positive = jumps present)
+    jump_var = (rv - bv).clip(lower=0)
+
+    # Jump test statistic
+    bv_safe = bv.replace(0, np.nan)
+    jump_ratio = jump_var / bv_safe  # ratio of jump to continuous variance
+
+    # Jump indicator: significant if jump_ratio > threshold
+    df["jump_indicator"] = (jump_ratio > 0.5).astype(float)
+
+    # Jump magnitude: max single-bar return in window when jump detected
+    rolling_max_ret = abs_ret.rolling(window).max()
+    df["jump_magnitude"] = np.where(
+        df["jump_indicator"] > 0,
+        rolling_max_ret * 100,  # as percentage
+        0,
+    )
+
+    # Continuous volatility (BV-based, cleaner than RV)
+    df["continuous_vol"] = np.sqrt(bv / window).fillna(0)
 
     return df
 

@@ -124,6 +124,8 @@ class FeatureConfig:
         # v5.0 Pro: Feature Interactions
         "ix_rsi_volume", "ix_macd_adx", "ix_momentum_regime",
         "ix_whale_flow", "ix_squeeze_cycle",
+        # v5.1 Pro: Jump Detection
+        "jump_indicator", "jump_magnitude", "continuous_vol",
     )
 
 
