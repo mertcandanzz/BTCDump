@@ -138,6 +138,7 @@ class FeatureConfig:
         "klinger_osc", "vortex_diff",
         "dpo", "ultimate_osc",
         "awesome_osc", "accel_decel", "supertrend_dir",
+        "schaff_tc", "coppock_curve",
     )
 
 

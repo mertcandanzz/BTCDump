@@ -1723,6 +1723,32 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
         supertrend.iloc[i] = direction
     df["supertrend_dir"] = supertrend
 
+    # ── Schaff Trend Cycle (STC) ──
+    # Combines MACD speed with Stochastic smoothing. Range 0-100.
+    # Faster trend detection than MACD alone.
+    macd_line = c.ewm(span=23, adjust=False).mean() - c.ewm(span=50, adjust=False).mean()
+    stc_period = 10
+    ll_macd = macd_line.rolling(stc_period).min()
+    hh_macd = macd_line.rolling(stc_period).max()
+    stoch1 = ((macd_line - ll_macd) / (hh_macd - ll_macd).replace(0, np.nan) * 100).fillna(50)
+    smooth1 = stoch1.ewm(span=3, adjust=False).mean()
+    ll_s1 = smooth1.rolling(stc_period).min()
+    hh_s1 = smooth1.rolling(stc_period).max()
+    stoch2 = ((smooth1 - ll_s1) / (hh_s1 - ll_s1).replace(0, np.nan) * 100).fillna(50)
+    df["schaff_tc"] = stoch2.ewm(span=3, adjust=False).mean()
+
+    # ── Coppock Curve ──
+    # Long-term momentum bottom signal. WMA of sum of ROC(14) + ROC(11).
+    # Adapted from monthly (14/11/10) to intraday.
+    roc_14 = c.pct_change(14) * 100
+    roc_11 = c.pct_change(11) * 100
+    coppock_raw = roc_14 + roc_11
+    # Weighted moving average (10 period)
+    weights_wma = np.arange(1, 11)
+    df["coppock_curve"] = coppock_raw.rolling(10).apply(
+        lambda x: np.dot(x, weights_wma) / weights_wma.sum() if len(x) == 10 else 0, raw=True
+    )
+
     return df
 
 
