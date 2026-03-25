@@ -150,6 +150,7 @@ class FeatureConfig:
         "waddah_explosion", "squeeze_momentum",
         "chop_adj_momentum", "vol_price_confirm",
         "ehlers_it_dist", "range_intensity", "median_dev",
+        "trend_angle", "rvi_dorsey",
     )
 
 

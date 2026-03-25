@@ -1972,6 +1972,26 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     median_20 = c.rolling(20).median()
     df["median_dev"] = (c - median_20) / c.replace(0, np.nan) * 100
 
+    # ── Trend Angle ──
+    # Arctangent of linear regression slope over 14 bars (in degrees)
+    # Steep angle = strong trend, flat = no trend
+    x_lr = np.arange(14, dtype=float)
+    x_mean_lr = x_lr.mean()
+    x_var_lr = ((x_lr - x_mean_lr) ** 2).sum()
+    slope = c.rolling(14).apply(
+        lambda y: np.sum((x_lr - x_mean_lr) * (y - y.mean())) / x_var_lr if len(y) == 14 else 0,
+        raw=True,
+    )
+    # Normalize slope by price then convert to angle
+    norm_slope = slope / c.replace(0, np.nan) * 100
+    df["trend_angle"] = np.degrees(np.arctan(norm_slope))
+
+    # ── Relative Volatility Index (RVI by Donald Dorsey) ──
+    # RSI applied to 10-bar standard deviation instead of price
+    # Measures if volatility is expanding (>50) or contracting (<50)
+    std_10 = c.rolling(10).std()
+    df["rvi_dorsey"] = _compute_rsi_series(std_10, 14)
+
     return df
 
 
