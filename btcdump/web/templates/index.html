@@ -215,6 +215,7 @@
                     <button class="center-tab" onclick="switchCenterTab('backtest')">Backtest</button>
                     <button class="center-tab" onclick="switchCenterTab('features')">Features</button>
                     <button class="center-tab" onclick="switchCenterTab('portfolio')">Portfolio</button>
+                    <button class="center-tab" onclick="switchCenterTab('history')">History</button>
                 </div>
 
                 <!-- Chart Tab -->
@@ -265,6 +266,16 @@
                     <div id="portfolioContent" style="font-size:12px;color:var(--text-dim);padding:20px;text-align:center">
                         Click "Buy" or "Short" to start paper trading with $10,000 virtual balance.
                     </div>
+                </div>
+
+                <!-- History Tab -->
+                <div id="tabHistory" class="tab-content" style="display:none">
+                    <div style="padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)">
+                        <button class="btn btn-primary btn-sm" onclick="loadSignalHistory()">Load History</button>
+                        <button class="btn btn-sm" onclick="updateOutcomes()">Update Outcomes</button>
+                        <span id="historyStats" class="panel-hint"></span>
+                    </div>
+                    <div id="historyContent" style="overflow:auto;font-size:11px"></div>
                 </div>
 
                 <!-- Discussion (always below tabs) -->

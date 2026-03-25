@@ -26,6 +26,7 @@ from btcdump.web.live_feed import BinanceLiveFeed
 from btcdump.web.llm import LLMManager, PROVIDER_MODELS
 from btcdump.web.notifications import NotificationManager
 from btcdump.web.paper_trading import PaperTrader
+from btcdump.web.signal_history import SignalHistory
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class BTCDumpWebApp:
         self.alerts = AlertManager()
         self.paper_trader = PaperTrader()
         self.live_feed = BinanceLiveFeed()
+        self.signal_history = SignalHistory(self.config.data.cache_dir.parent)
         self.connected_ws: set = set()
 
         ensure_dirs(self.config.data.cache_dir, self.config.model.models_dir)
@@ -87,6 +89,9 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
     async def get_coin_signal(symbol: str):
         try:
             data = await asyncio.to_thread(state.coin_manager.compute_signal, symbol)
+            # Record signal in history
+            if data.get("status") == "ready" and data.get("direction"):
+                state.signal_history.record(data)
             return {"ok": True, "data": data, "status": data.get("status", "ready")}
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -209,6 +214,27 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
                 _run_scanner, state, condition, limit,
             )
             return {"ok": True, "condition": condition, "results": results}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Signal History ─────────────────────────────────────
+
+    @app.get("/api/signal-history")
+    async def get_signal_history(symbol: str = "", limit: int = 50):
+        records = state.signal_history.get_history(symbol, limit)
+        return {"ok": True, "records": records}
+
+    @app.get("/api/signal-history/stats")
+    async def get_signal_stats(symbol: str = ""):
+        stats = state.signal_history.get_stats(symbol)
+        return {"ok": True, **stats}
+
+    @app.post("/api/signal-history/update-outcomes")
+    async def update_signal_outcomes():
+        try:
+            tickers = {t["symbol"]: t["lastPrice"] for t in state.coin_manager.fetcher.fetch_tickers()}
+            updated = state.signal_history.update_outcomes(tickers)
+            return {"ok": True, "updated": updated}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

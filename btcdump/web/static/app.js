@@ -415,6 +415,7 @@ function switchCenterTab(tab) {
     document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = '';
     if (tab === 'features') loadFeatureImportance();
     if (tab === 'portfolio') loadPortfolio();
+    if (tab === 'history') loadSignalHistory();
 }
 
 // ── Feature Importance ──
@@ -583,6 +584,69 @@ async function loadPortfolio() {
             <button class="btn btn-sm btn-ghost" onclick="fetch('/api/paper/reset',{method:'POST'});setTimeout(loadPortfolio,300)">Reset</button>
         </div>`;
         el.innerHTML = h;
+    } catch(e) {}
+}
+
+// ── Signal History ──
+async function loadSignalHistory() {
+    try {
+        const [histR, statsR] = await Promise.all([
+            fetch(`/api/signal-history?symbol=${activeSymbol}&limit=30`),
+            fetch(`/api/signal-history/stats?symbol=${activeSymbol}`),
+        ]);
+        const hist = await histR.json();
+        const stats = await statsR.json();
+
+        if (stats.ok) {
+            const el = document.getElementById('historyStats');
+            const accColor = stats.accuracy >= 55 ? 'var(--green)' : stats.accuracy >= 45 ? 'var(--yellow)' : 'var(--red)';
+            el.innerHTML = `<span style="color:${accColor}">${stats.accuracy}% accuracy</span> (${stats.correct}/${stats.resolved} resolved, ${stats.pending} pending)`;
+        }
+
+        if (hist.ok && hist.records?.length) {
+            let h = '<table class="comparison-table"><thead><tr><th>Time</th><th>Signal</th><th>Conf</th><th>Price</th><th>Pred%</th><th>RSI</th><th>1h</th><th>4h</th><th>24h</th><th>Result</th></tr></thead><tbody>';
+            hist.records.forEach(r => {
+                const cls = r.direction.includes('BUY') ? 'buy' : r.direction.includes('SELL') ? 'sell' : 'hold';
+                const oc = r.outcome === 'correct' ? '<span style="color:var(--green)">Correct</span>' :
+                           r.outcome === 'wrong' ? '<span style="color:var(--red)">Wrong</span>' :
+                           '<span style="color:var(--text-muted)">Pending</span>';
+                const pctAfter = (p) => {
+                    if (!p || !r.price_at_signal) return '--';
+                    const chg = ((p - r.price_at_signal) / r.price_at_signal * 100);
+                    const color = chg >= 0 ? 'var(--green)' : 'var(--red)';
+                    return `<span style="color:${color}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</span>`;
+                };
+                const t = new Date(r.timestamp);
+                const timeStr = `${t.getMonth()+1}/${t.getDate()} ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+                h += `<tr>
+                    <td>${timeStr}</td>
+                    <td><span class="signal-badge ${sigCls(r.direction)}">${r.direction}</span></td>
+                    <td>${r.confidence?.toFixed(0)}%</td>
+                    <td>$${fmtP(r.price_at_signal)}</td>
+                    <td>${r.predicted_change_pct >= 0 ? '+' : ''}${r.predicted_change_pct?.toFixed(2)}%</td>
+                    <td style="color:${rsiCol(r.rsi)}">${r.rsi}</td>
+                    <td>${pctAfter(r.price_after_1h)}</td>
+                    <td>${pctAfter(r.price_after_4h)}</td>
+                    <td>${pctAfter(r.price_after_24h)}</td>
+                    <td>${oc}</td>
+                </tr>`;
+            });
+            h += '</tbody></table>';
+            document.getElementById('historyContent').innerHTML = h;
+        } else {
+            document.getElementById('historyContent').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">No signal history yet. Refresh a signal to start recording.</div>';
+        }
+    } catch(e) { toast('History load failed', 'error'); }
+}
+
+async function updateOutcomes() {
+    try {
+        const r = await fetch('/api/signal-history/update-outcomes', {method: 'POST'});
+        const j = await r.json();
+        if (j.ok) {
+            toast(`Updated ${j.updated} outcomes`, 'success');
+            loadSignalHistory();
+        }
     } catch(e) {}
 }
 
