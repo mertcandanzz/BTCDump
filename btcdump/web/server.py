@@ -1101,6 +1101,270 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Conviction-Based Position Sizing ────────────────────
+
+    @app.get("/api/coin/{symbol}/position-size")
+    async def conviction_position_size(symbol: str, capital: float = 10000):
+        """Calculate position size based on consensus conviction + Kelly + volatility."""
+        try:
+            def _calc():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+                row = enriched.iloc[-1]
+                price = float(data.df["close"].iloc[-1])
+
+                def _safe(key, default=0):
+                    v = row.get(key, default)
+                    return default if (hasattr(v, '__float__') and v != v) else float(v)
+
+                atr = _safe("ATR", price * 0.02)
+                yang_zhang = _safe("yang_zhang_vol", 0.02)
+
+                # Get consensus conviction
+                cached = state.coin_manager.signal_cache.get(symbol, {})
+                confidence = cached.get("confidence", 50)
+
+                # Kelly from signal history
+                stats = state.signal_history.get_stats(symbol)
+                win_rate = stats.get("accuracy", 50) / 100
+                trades = state.paper_trader.get_history()
+                wins = [t for t in trades if t["pnl"] > 0]
+                losses = [t for t in trades if t["pnl"] <= 0]
+                avg_win = sum(t["pnl_pct"] for t in wins) / len(wins) if wins else 1.5
+                avg_loss = abs(sum(t["pnl_pct"] for t in losses) / len(losses)) if losses else 1.0
+                b = avg_win / avg_loss if avg_loss > 0 else 1
+                kelly = max(0, min(0.25, (b * win_rate - (1 - win_rate)) / b))
+
+                # Conviction scaling (0-100 → 0.2-1.0 multiplier)
+                conviction_mult = 0.2 + (confidence / 100) * 0.8
+
+                # Volatility scaling (higher vol → smaller size)
+                vol_mult = max(0.3, min(1.5, 0.02 / max(yang_zhang, 0.001)))
+
+                # Final position size
+                base_pct = kelly * 100 if kelly > 0 else 2.0  # default 2% if no history
+                adjusted_pct = base_pct * conviction_mult * vol_mult
+                adjusted_pct = max(0.5, min(25, adjusted_pct))  # cap 0.5%-25%
+
+                position_usd = capital * (adjusted_pct / 100)
+                quantity = position_usd / price if price > 0 else 0
+                sl_distance = atr * 1.5
+                risk_usd = quantity * sl_distance
+
+                return {
+                    "price": round(price, 6),
+                    "recommended_pct": round(adjusted_pct, 2),
+                    "position_usd": round(position_usd, 2),
+                    "quantity": round(quantity, 8),
+                    "risk_usd": round(risk_usd, 2),
+                    "risk_pct_of_capital": round(risk_usd / capital * 100, 2),
+                    "factors": {
+                        "kelly_base_pct": round(base_pct, 2),
+                        "conviction_mult": round(conviction_mult, 3),
+                        "volatility_mult": round(vol_mult, 3),
+                        "win_rate": round(win_rate * 100, 1),
+                        "yang_zhang_vol": round(yang_zhang, 4),
+                    },
+                    "sl_suggested": round(price - sl_distance, 6) if cached.get("direction", "").find("BUY") >= 0 else round(price + sl_distance, 6),
+                }
+
+            result = await asyncio.to_thread(_calc)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Live Threshold Optimizer ──────────────────────────
+
+    @app.post("/api/optimize-thresholds")
+    async def optimize_thresholds():
+        """Optimize signal thresholds based on signal history outcomes."""
+        records = state.signal_history.get_history(limit=200)
+        resolved = [r for r in records if r.get("outcome") in ("correct", "wrong")
+                     and r.get("predicted_change_pct") is not None]
+
+        if len(resolved) < 20:
+            return {"ok": False, "error": f"Need 20+ resolved signals, have {len(resolved)}"}
+
+        best_accuracy = 0
+        best_thresholds = None
+        results = []
+
+        # Grid search over threshold combinations
+        for buy_t in [0.2, 0.3, 0.5, 0.7, 1.0]:
+            for sell_t in [-0.2, -0.3, -0.5, -0.7, -1.0]:
+                correct = 0
+                total = 0
+                for r in resolved:
+                    chg = r.get("predicted_change_pct", 0)
+                    actual_outcome = r.get("outcome", "")
+
+                    if chg > buy_t:
+                        predicted_dir = "BUY"
+                    elif chg < sell_t:
+                        predicted_dir = "SELL"
+                    else:
+                        predicted_dir = "HOLD"
+
+                    if predicted_dir == "HOLD":
+                        continue
+
+                    total += 1
+                    if actual_outcome == "correct":
+                        correct += 1
+
+                accuracy = correct / total * 100 if total > 0 else 0
+
+                if total >= 10 and accuracy > best_accuracy:
+                    best_accuracy = accuracy
+                    best_thresholds = {
+                        "buy": buy_t, "sell": sell_t,
+                        "strong_buy": buy_t * 2, "strong_sell": sell_t * 2,
+                    }
+
+                results.append({
+                    "buy": buy_t, "sell": sell_t,
+                    "accuracy": round(accuracy, 1),
+                    "trades": total,
+                })
+
+        if not best_thresholds:
+            return {"ok": False, "error": "No profitable threshold found"}
+
+        # Apply if requested
+        return {
+            "ok": True,
+            "best_thresholds": best_thresholds,
+            "best_accuracy": round(best_accuracy, 1),
+            "current_thresholds": {
+                "buy": state.config.signal.buy_threshold,
+                "sell": state.config.signal.sell_threshold,
+            },
+            "all_results": sorted(results, key=lambda x: x["accuracy"], reverse=True)[:10],
+            "note": "Use POST /api/optimize-thresholds/apply to activate",
+        }
+
+    @app.post("/api/optimize-thresholds/apply")
+    async def apply_optimized_thresholds(body: dict):
+        """Apply optimized thresholds to signal generator."""
+        buy = body.get("buy", 0.5)
+        sell = body.get("sell", -0.5)
+        strong_buy = body.get("strong_buy", buy * 2)
+        strong_sell = body.get("strong_sell", sell * 2)
+        state.coin_manager.signal_gen.update_thresholds(buy, sell, strong_buy, strong_sell)
+        return {"ok": True, "applied": {"buy": buy, "sell": sell, "strong_buy": strong_buy, "strong_sell": strong_sell}}
+
+    # ── Backtesting Calendar ──────────────────────────────
+
+    @app.get("/api/coin/{symbol}/backtest-calendar")
+    async def backtest_calendar(symbol: str):
+        """Generate daily return heatmap data for calendar visualization."""
+        try:
+            def _calc():
+                data = state.coin_manager.fetcher.fetch_with_cache(symbol, "1d")
+                df = data.df.tail(365)
+
+                calendar = {}
+                for _, r in df.iterrows():
+                    t = r["time"]
+                    date_str = t.strftime("%Y-%m-%d")
+                    ret = (r["close"] - r["open"]) / r["open"] * 100 if r["open"] > 0 else 0
+                    calendar[date_str] = {
+                        "return_pct": round(float(ret), 2),
+                        "close": round(float(r["close"]), 6),
+                        "volume": round(float(r["volume"]), 2),
+                    }
+
+                # Monthly summary
+                monthly = {}
+                for date_str, data_entry in calendar.items():
+                    month = date_str[:7]
+                    if month not in monthly:
+                        monthly[month] = {"returns": [], "count": 0}
+                    monthly[month]["returns"].append(data_entry["return_pct"])
+                    monthly[month]["count"] += 1
+
+                for m in monthly:
+                    rets = monthly[m]["returns"]
+                    monthly[m] = {
+                        "avg_return": round(sum(rets) / len(rets), 2),
+                        "total_return": round(sum(rets), 2),
+                        "win_days": sum(1 for r in rets if r > 0),
+                        "loss_days": sum(1 for r in rets if r <= 0),
+                        "best_day": round(max(rets), 2),
+                        "worst_day": round(min(rets), 2),
+                    }
+
+                return {"daily": calendar, "monthly": monthly}
+
+            result = await asyncio.to_thread(_calc)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Feature Drift Detection ───────────────────────────
+
+    @app.get("/api/coin/{symbol}/feature-drift")
+    async def feature_drift(symbol: str):
+        """Detect if feature distributions have shifted significantly (model may be stale)."""
+        try:
+            def _detect():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+
+                if len(enriched) < 100:
+                    return {"drifted": False, "message": "Insufficient data"}
+
+                # Compare recent 20 bars vs historical 80 bars for key features
+                recent = enriched.tail(20)
+                historical = enriched.iloc[-100:-20]
+
+                key_features = ["RSI", "ADX", "volume_ratio", "ATR", "efficiency_ratio",
+                                "hurst_exponent", "bb_width", "price_entropy"]
+
+                drifts = []
+                for feat in key_features:
+                    if feat not in enriched.columns:
+                        continue
+                    hist_vals = historical[feat].dropna()
+                    recent_vals = recent[feat].dropna()
+                    if len(hist_vals) < 10 or len(recent_vals) < 5:
+                        continue
+
+                    hist_mean = float(hist_vals.mean())
+                    hist_std = float(hist_vals.std()) or 1
+                    recent_mean = float(recent_vals.mean())
+                    z_shift = abs(recent_mean - hist_mean) / hist_std
+
+                    if z_shift > 2:
+                        drifts.append({
+                            "feature": feat,
+                            "z_shift": round(z_shift, 2),
+                            "historical_mean": round(hist_mean, 4),
+                            "recent_mean": round(recent_mean, 4),
+                            "severity": "high" if z_shift > 3 else "moderate",
+                        })
+
+                drifted = len(drifts) >= 3  # 3+ features drifted = regime change likely
+                return {
+                    "drifted": drifted,
+                    "drift_count": len(drifts),
+                    "total_checked": len(key_features),
+                    "drifted_features": drifts,
+                    "recommendation": (
+                        "Model is likely stale - retrain recommended" if drifted else
+                        "Model appears current - no retraining needed"
+                    ),
+                }
+
+            result = await asyncio.to_thread(_detect)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Pair Trading Scanner ─────────────────────────────
 
     @app.get("/api/pair-trading")
