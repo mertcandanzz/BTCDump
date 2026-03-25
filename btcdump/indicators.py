@@ -1618,6 +1618,23 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
 
     df["connors_rsi"] = (rsi_3 + rsi_streak + pct_rank) / 3
 
+    # ── Chande Momentum Oscillator (CMO) ──
+    # Like RSI but symmetric and zero-lag: (sum_up - sum_down) / (sum_up + sum_down) * 100
+    delta = c.diff()
+    gain_sum = delta.where(delta > 0, 0).rolling(14).sum()
+    loss_sum = (-delta.where(delta < 0, 0)).rolling(14).sum()
+    total = (gain_sum + loss_sum).replace(0, np.nan)
+    df["cmo"] = ((gain_sum - loss_sum) / total * 100).fillna(0)
+
+    # ── Elder Ray (Bull Power + Bear Power) ──
+    # Bull Power = High - EMA(13), Bear Power = Low - EMA(13)
+    ema13 = c.ewm(span=13, adjust=False).mean()
+    bull_power = h - ema13
+    bear_power = l - ema13
+    # Normalize by price for cross-asset comparability
+    df["elder_bull"] = bull_power / c.replace(0, np.nan) * 100
+    df["elder_bear"] = bear_power / c.replace(0, np.nan) * 100
+
     return df
 
 

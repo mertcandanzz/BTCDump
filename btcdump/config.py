@@ -133,6 +133,7 @@ class FeatureConfig:
         # v5.1 Pro: Precision Features
         "garman_klass_vol", "rvi", "vw_momentum_10", "vw_momentum_20",
         "fisher_transform", "connors_rsi",
+        "cmo", "elder_bull", "elder_bear",
     )
 
 
