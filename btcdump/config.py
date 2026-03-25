@@ -134,6 +134,7 @@ class FeatureConfig:
         "garman_klass_vol", "rvi", "vw_momentum_10", "vw_momentum_20",
         "fisher_transform", "connors_rsi",
         "cmo", "elder_bull", "elder_bear",
+        "aroon_osc", "mass_index",
     )
 
 

@@ -1635,6 +1635,22 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     df["elder_bull"] = bull_power / c.replace(0, np.nan) * 100
     df["elder_bear"] = bear_power / c.replace(0, np.nan) * 100
 
+    # ── Aroon Oscillator ──
+    # Measures how recently price made a high vs low within a window
+    # Range -100 to +100. Positive = uptrend, Negative = downtrend
+    period = 25
+    aroon_up = h.rolling(period + 1).apply(lambda x: x.argmax() / period * 100, raw=True)
+    aroon_down = l.rolling(period + 1).apply(lambda x: x.argmin() / period * 100, raw=True)
+    df["aroon_osc"] = aroon_up - aroon_down
+
+    # ── Mass Index ──
+    # Detects reversals via range expansion then contraction ("reversal bulge")
+    # When Mass Index rises above 27 then drops below 26.5 = reversal signal
+    ema_range = (h - l).ewm(span=9, adjust=False).mean()
+    double_ema = ema_range.ewm(span=9, adjust=False).mean()
+    ratio = ema_range / double_ema.replace(0, np.nan)
+    df["mass_index"] = ratio.rolling(25).sum()
+
     return df
 
 
