@@ -1563,7 +1563,7 @@ def _kalman_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _final_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Final precision features: GK volatility, RVI, volume-weighted momentum."""
+    """Final precision features: GK vol, RVI, VW momentum, Fisher, ConnorsRSI."""
     c, o, h, l, v = df["close"], df["open"], df["high"], df["low"], df["volume"]
 
     # ── Garman-Klass Volatility (best single OHLC estimator) ──
@@ -1587,7 +1587,49 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     df["vw_momentum_10"] = weighted_ret.rolling(10).sum()
     df["vw_momentum_20"] = weighted_ret.rolling(20).sum()
 
+    # ── Ehlers Fisher Transform ──
+    # Converts price to near-Gaussian distribution for sharper turning points
+    period = 10
+    hl_mid = (h.rolling(period).max() + l.rolling(period).min()) / 2
+    hl_range = (h.rolling(period).max() - l.rolling(period).min()).replace(0, np.nan)
+    raw_val = 2 * ((c - hl_mid) / hl_range) - 1  # normalize to [-1, 1]
+    raw_val = raw_val.clip(-0.999, 0.999)  # prevent log singularity
+    # Fisher transform: 0.5 * ln((1+x)/(1-x))
+    fisher = 0.5 * np.log((1 + raw_val) / (1 - raw_val))
+    df["fisher_transform"] = fisher.ewm(span=5).mean()
+
+    # ── Connors RSI (institutional grade) ──
+    # CRSI = (RSI(3) + RSI_streak(2) + PercentRank(100)) / 3
+    rsi_3 = _compute_rsi_series(c, 3)
+
+    # Streak RSI: count consecutive up/down days, then RSI of streak
+    streak = pd.Series(0, index=df.index)
+    direction = np.sign(c.diff())
+    groups = (direction != direction.shift()).cumsum()
+    streak = direction * direction.groupby(groups).cumcount().add(1)
+    rsi_streak = _compute_rsi_series(streak, 2)
+
+    # Percent Rank: where today's return sits in last 100 returns
+    single_ret = c.pct_change()
+    pct_rank = single_ret.rolling(100).apply(
+        lambda x: (x.iloc[-1] > x.iloc[:-1]).sum() / max(1, len(x) - 1) * 100 if len(x) > 1 else 50,
+        raw=False,
+    )
+
+    df["connors_rsi"] = (rsi_3 + rsi_streak + pct_rank) / 3
+
     return df
+
+
+def _compute_rsi_series(series, period):
+    """Helper: compute RSI on any series."""
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
+    avg_gain = gain.ewm(com=period - 1, min_periods=period).mean()
+    avg_loss = loss.ewm(com=period - 1, min_periods=period).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100.0 - (100.0 / (1.0 + rs))
 
 
 def _ou_features(df: pd.DataFrame) -> pd.DataFrame:
