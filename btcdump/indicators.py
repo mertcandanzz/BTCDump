@@ -1696,6 +1696,33 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     avg28 = bp.rolling(28).sum() / tr_uo.rolling(28).sum().replace(0, np.nan)
     df["ultimate_osc"] = (4 * avg7 + 2 * avg14 + avg28) / 7 * 100
 
+    # ── Awesome Oscillator (Bill Williams) ──
+    # Measures market momentum using midpoint: SMA5(mid) - SMA34(mid)
+    midpoint = (h + l) / 2
+    ao = midpoint.rolling(5).mean() - midpoint.rolling(34).mean()
+    df["awesome_osc"] = ao / c.replace(0, np.nan) * 100  # normalized %
+
+    # ── Acceleration/Deceleration (AC) ──
+    # Rate of change of AO: catches momentum shifts before price
+    ao_sma5 = ao.rolling(5).mean()
+    df["accel_decel"] = (ao - ao_sma5) / c.replace(0, np.nan) * 100
+
+    # ── Supertrend Direction (simplified) ──
+    # ATR-based trend following: +1 = uptrend, -1 = downtrend
+    atr_col = df.get("ATR", (h - l).rolling(14).mean())
+    multiplier = 3.0
+    upper_band = (h + l) / 2 + multiplier * atr_col
+    lower_band = (h + l) / 2 - multiplier * atr_col
+    supertrend = pd.Series(0.0, index=df.index)
+    direction = 1
+    for i in range(1, len(df)):
+        if c.iloc[i] > upper_band.iloc[i - 1]:
+            direction = 1
+        elif c.iloc[i] < lower_band.iloc[i - 1]:
+            direction = -1
+        supertrend.iloc[i] = direction
+    df["supertrend_dir"] = supertrend
+
     return df
 
 

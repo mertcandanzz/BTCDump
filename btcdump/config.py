@@ -137,6 +137,7 @@ class FeatureConfig:
         "aroon_osc", "mass_index",
         "klinger_osc", "vortex_diff",
         "dpo", "ultimate_osc",
+        "awesome_osc", "accel_decel", "supertrend_dir",
     )
 
 
