@@ -853,6 +853,38 @@ async function runCalibration() {
     } catch(e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">Calibration failed</div>'; }
 }
 
+// ── AI Trade Coach ──
+async function loadTradeCoach() {
+    const el = document.getElementById('coachResults');
+    el.style.display = '';
+    el.innerHTML = '<div style="padding:10px;color:var(--text-muted)">Analyzing your trading patterns...</div>';
+    try {
+        const r = await fetch('/api/trade-coach');
+        const j = await r.json();
+        if (!j.ok) { el.innerHTML = `<div style="padding:10px;color:var(--red)">${j.error}</div>`; return; }
+
+        const gradeColors = {A:'var(--green)',B:'#66bb6a',C:'var(--yellow)',D:'#ff9800',F:'var(--red)'};
+        let h = `<div style="padding:10px 14px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <div style="width:40px;height:40px;border-radius:50%;background:${gradeColors[j.grade]||'var(--text-muted)'};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#000">${j.grade}</div>
+                <div>
+                    <div style="font-size:13px;font-weight:700">${j.summary}</div>
+                    <div style="font-size:10px;color:var(--text-dim)">Score: ${j.score}/100 | ${j.total_trades} trades | ${j.win_rate}% win rate</div>
+                </div>
+            </div>`;
+
+        j.insights.forEach(i => {
+            h += `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
+                <div style="font-weight:600">${i.icon} ${i.category}</div>
+                <div style="color:var(--text-dim);margin:2px 0">${i.message}</div>
+                <div style="color:var(--accent);font-size:10px">→ ${i.action}</div>
+            </div>`;
+        });
+        h += '</div>';
+        el.innerHTML = h;
+    } catch(e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">Coach failed</div>'; }
+}
+
 // ── Risk Dashboard ──
 async function loadRiskDashboard() {
     try {

@@ -1122,6 +1122,116 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── AI Trade Coach ────────────────────────────────────
+
+    @app.get("/api/trade-coach")
+    async def trade_coach():
+        """Personalized trading coach: analyzes history, identifies patterns, gives advice."""
+        try:
+            trades = state.paper_trader.get_history()
+            sig_stats = state.signal_history.get_stats()
+            positions = state.paper_trader.positions
+
+            insights = []
+            score = 50  # coaching score 0-100
+
+            # ── Trading Volume Analysis ──
+            if len(trades) == 0:
+                insights.append({
+                    "category": "Getting Started",
+                    "icon": "📚",
+                    "message": "You haven't made any trades yet. Start with small paper positions to build confidence.",
+                    "action": "Use the Trade Setup button to generate your first setup, then click Buy.",
+                })
+                return {"ok": True, "score": 30, "insights": insights, "summary": "New trader - start paper trading to get personalized coaching."}
+
+            # ── Win/Loss Analysis ──
+            wins = [t for t in trades if t["pnl"] > 0]
+            losses = [t for t in trades if t["pnl"] <= 0]
+            win_rate = len(wins) / len(trades) if trades else 0
+
+            if win_rate >= 0.6:
+                insights.append({"category": "Win Rate", "icon": "🏆", "message": f"Strong {win_rate*100:.0f}% win rate across {len(trades)} trades.", "action": "Consider increasing position size gradually."})
+                score += 15
+            elif win_rate >= 0.45:
+                insights.append({"category": "Win Rate", "icon": "📊", "message": f"Decent {win_rate*100:.0f}% win rate. Room to improve entry timing.", "action": "Wait for consensus score > 65 before entering."})
+                score += 5
+            else:
+                insights.append({"category": "Win Rate", "icon": "⚠️", "message": f"Low {win_rate*100:.0f}% win rate. Review your entry criteria.", "action": "Only trade when Multi-TF alignment > 75% and Market Health >= B."})
+                score -= 10
+
+            # ── Risk Management ──
+            if wins and losses:
+                avg_win = sum(t["pnl_pct"] for t in wins) / len(wins)
+                avg_loss = abs(sum(t["pnl_pct"] for t in losses) / len(losses))
+                rr = avg_win / avg_loss if avg_loss > 0 else 0
+
+                if rr >= 2:
+                    insights.append({"category": "Risk/Reward", "icon": "🎯", "message": f"Excellent R/R ratio of {rr:.1f}. Letting winners run.", "action": "Keep this discipline. Consider trailing stops."})
+                    score += 15
+                elif rr >= 1:
+                    insights.append({"category": "Risk/Reward", "icon": "⚖️", "message": f"R/R ratio of {rr:.1f}. Average losses are almost as big as wins.", "action": "Tighten stop-losses. Use ATR-based stops from Trade Setup."})
+                    score += 5
+                else:
+                    insights.append({"category": "Risk/Reward", "icon": "🚨", "message": f"Poor R/R of {rr:.1f}. Losses bigger than wins - this will fail long-term.", "action": "CRITICAL: Never risk more than you expect to gain. Use SL/TP from Trade Setup."})
+                    score -= 15
+
+                # Consecutive losses
+                max_losing_streak = 0
+                current_streak = 0
+                for t in trades:
+                    if t["pnl"] <= 0:
+                        current_streak += 1
+                        max_losing_streak = max(max_losing_streak, current_streak)
+                    else:
+                        current_streak = 0
+
+                if max_losing_streak >= 5:
+                    insights.append({"category": "Tilt Warning", "icon": "🧘", "message": f"Max losing streak: {max_losing_streak} trades. Possible tilt/revenge trading.", "action": "After 3 consecutive losses, take a 1-hour break. Check Feature Drift."})
+                    score -= 10
+                elif max_losing_streak >= 3:
+                    insights.append({"category": "Streaks", "icon": "📉", "message": f"Losing streak of {max_losing_streak}. Normal, but monitor.", "action": "Reduce size by 50% after 3 losses. Recover gradually."})
+
+            # ── Position Sizing ──
+            if len(positions) > 3:
+                insights.append({"category": "Concentration", "icon": "🎲", "message": f"You have {len(positions)} open positions. High concentration risk.", "action": "Max 3 positions. Check Portfolio Rebalancing."})
+                score -= 10
+            elif len(positions) == 0 and len(trades) > 5:
+                insights.append({"category": "Activity", "icon": "💤", "message": "No open positions. Missing opportunities?", "action": "Check the Leaderboard or Scanner for opportunities."})
+
+            # ── Signal Adherence ──
+            if sig_stats.get("accuracy", 0) > 55:
+                insights.append({"category": "Signal Quality", "icon": "🤖", "message": f"AI signals are {sig_stats['accuracy']:.0f}% accurate. Trust the model.", "action": "Follow consensus score > 60 for best results."})
+                score += 10
+            elif sig_stats.get("resolved", 0) > 10 and sig_stats.get("accuracy", 0) < 45:
+                insights.append({"category": "Signal Quality", "icon": "🔧", "message": f"AI accuracy is {sig_stats['accuracy']:.0f}%. Consider retraining or optimizing thresholds.", "action": "Run Threshold Optimizer, check Feature Drift, or retrain model."})
+                score -= 5
+
+            # ── Overall Grade ──
+            score = max(0, min(100, score))
+            if score >= 75:
+                grade, summary = "A", "Excellent trading discipline. Keep it up!"
+            elif score >= 60:
+                grade, summary = "B", "Good overall, with specific areas to improve."
+            elif score >= 45:
+                grade, summary = "C", "Average. Focus on risk management and entry timing."
+            elif score >= 30:
+                grade, summary = "D", "Below average. Review the insights carefully."
+            else:
+                grade, summary = "F", "Critical issues found. Stop trading until addressed."
+
+            return {
+                "ok": True,
+                "score": score,
+                "grade": grade,
+                "summary": summary,
+                "total_trades": len(trades),
+                "win_rate": round(win_rate * 100, 1),
+                "insights": insights,
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Live Signal SSE Stream ──────────────────────────────
 
     @app.get("/api/stream/signals")

@@ -809,15 +809,17 @@ def _statistical_features(df: pd.DataFrame) -> pd.DataFrame:
     df["hurst_exponent"] = hurst
 
     # ── Auto-correlation (lag-1 return serial correlation) ──
-    # Positive = momentum persistence, Negative = mean-reversion
-    df["autocorr_1"] = ret.rolling(20).apply(
-        lambda x: x.autocorr(lag=1) if len(x) > 2 else 0, raw=False,
-    )
+    # Vectorized: corr(ret, ret.shift(1)) over rolling window
+    ret_lag1 = ret.shift(1)
+    rolling_cov = ret.rolling(20).cov(ret_lag1)
+    rolling_var = ret.rolling(20).var().replace(0, np.nan)
+    df["autocorr_1"] = (rolling_cov / rolling_var).fillna(0)
 
-    # ── Auto-correlation lag-5 (weekly pattern on 1h) ──
-    df["autocorr_5"] = ret.rolling(30).apply(
-        lambda x: pd.Series(x).autocorr(lag=5) if len(x) > 6 else 0, raw=False,
-    )
+    # ── Auto-correlation lag-5 ──
+    ret_lag5 = ret.shift(5)
+    rolling_cov5 = ret.rolling(30).cov(ret_lag5)
+    rolling_var5 = ret.rolling(30).var().replace(0, np.nan)
+    df["autocorr_5"] = (rolling_cov5 / rolling_var5).fillna(0)
 
     # ── DI+/DI- ratio (directional movement components) ──
     # We compute ADX but the ratio of DI+ to DI- tells direction
