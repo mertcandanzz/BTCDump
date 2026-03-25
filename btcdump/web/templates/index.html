@@ -286,6 +286,7 @@
                     <div class="compare-tabs">
                         <button class="filter-pill active" onclick="switchCompareTab('grid')">Grid</button>
                         <button class="filter-pill" onclick="switchCompareTab('correlation')">Correlation</button>
+                        <button class="filter-pill" onclick="switchCompareTab('scanner')">Scanner</button>
                     </div>
                     <div class="compare-filters">
                         <button class="filter-pill active" onclick="setSignalFilter('all')">All</button>
@@ -304,6 +305,24 @@
                         <span class="panel-hint">Returns correlation between watchlist coins</span>
                     </div>
                     <canvas id="correlationCanvas" style="width:100%;height:400px"></canvas>
+                </div>
+                <div id="compareScannerContent" style="display:none">
+                    <div class="scanner-toolbar" style="padding:8px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+                        <select id="scannerCondition" class="preset-select" style="min-width:150px">
+                            <option value="rsi_oversold">RSI Oversold (&lt;30)</option>
+                            <option value="rsi_overbought">RSI Overbought (&gt;70)</option>
+                            <option value="macd_cross_bull">MACD Bullish Cross</option>
+                            <option value="macd_cross_bear">MACD Bearish Cross</option>
+                            <option value="volume_spike">Volume Spike (&gt;2.5x)</option>
+                            <option value="bollinger_squeeze">Bollinger Squeeze</option>
+                            <option value="strong_trend">Strong Trend (ADX&gt;40)</option>
+                            <option value="ichimoku_bull">Ichimoku Bullish</option>
+                            <option value="ichimoku_bear">Ichimoku Bearish</option>
+                        </select>
+                        <button class="btn btn-primary btn-sm" onclick="runScanner()">Scan</button>
+                        <span id="scannerStatus" class="panel-hint"></span>
+                    </div>
+                    <div id="scannerResults" style="flex:1;overflow:auto;font-size:11px;padding:4px"></div>
                 </div>
             </div>
         </section>

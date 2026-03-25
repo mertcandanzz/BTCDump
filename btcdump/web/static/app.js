@@ -672,7 +672,49 @@ function switchCompareTab(tab) {
     event.target.classList.add('active');
     document.getElementById('compareGridContent').style.display = tab === 'grid' ? '' : 'none';
     document.getElementById('compareCorrelationContent').style.display = tab === 'correlation' ? '' : 'none';
+    document.getElementById('compareScannerContent').style.display = tab === 'scanner' ? '' : 'none';
     if (tab === 'correlation') loadCorrelation();
+}
+
+// ── Market Scanner ──
+async function runScanner() {
+    const condition = document.getElementById('scannerCondition').value;
+    const statusEl = document.getElementById('scannerStatus');
+    const resultsEl = document.getElementById('scannerResults');
+    statusEl.textContent = 'Scanning top 60 coins...';
+    resultsEl.innerHTML = '';
+
+    try {
+        const r = await fetch(`/api/scanner?condition=${condition}&limit=20`);
+        const j = await r.json();
+        if (!j.ok) { statusEl.textContent = j.error; return; }
+
+        statusEl.textContent = `Found ${j.results.length} matches`;
+
+        if (!j.results.length) {
+            resultsEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">No coins match this condition right now</div>';
+            return;
+        }
+
+        let h = '<table class="comparison-table"><thead><tr><th>Coin</th><th>Price</th><th>24h%</th><th>RSI</th><th>ADX</th><th>Vol</th><th>MACD</th><th>Action</th></tr></thead><tbody>';
+        j.results.forEach(c => {
+            const chg = c.priceChangePercent || 0;
+            h += `<tr>
+                <td><strong>${c.baseAsset}</strong></td>
+                <td>$${fmtP(c.lastPrice)}</td>
+                <td class="change-cell ${chg >= 0 ? 'up' : 'down'}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</td>
+                <td style="color:${rsiCol(c.rsi)}">${c.rsi}</td>
+                <td>${c.adx}</td>
+                <td>${c.volume_ratio}x</td>
+                <td>${c.macd_bullish ? '<span style="color:var(--green)">Bull</span>' : '<span style="color:var(--red)">Bear</span>'}</td>
+                <td><button class="btn btn-sm btn-primary" onclick="selectCoin('${c.symbol}');switchMode('single')">Analyze</button></td>
+            </tr>`;
+        });
+        h += '</tbody></table>';
+        resultsEl.innerHTML = h;
+    } catch(e) {
+        statusEl.textContent = 'Scanner failed';
+    }
 }
 
 // ── Correlation Matrix ──

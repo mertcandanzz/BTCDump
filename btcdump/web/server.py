@@ -195,6 +195,23 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Market Scanner ────────────────────────────────────
+
+    @app.get("/api/scanner")
+    async def market_scanner(condition: str = "rsi_oversold", limit: int = 20):
+        """Scan top coins for trading conditions.
+
+        Conditions: rsi_oversold, rsi_overbought, macd_cross_bull, macd_cross_bear,
+        volume_spike, bollinger_squeeze, strong_trend, ichimoku_bull, ichimoku_bear
+        """
+        try:
+            results = await asyncio.to_thread(
+                _run_scanner, state, condition, limit,
+            )
+            return {"ok": True, "condition": condition, "results": results}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Correlation Matrix ──────────────────────────────────
 
     @app.get("/api/correlation")
@@ -623,6 +640,67 @@ async def _handle_backtest(ws: WebSocket, state: BTCDumpWebApp, msg: dict) -> No
         }})
     except Exception as e:
         await ws.send_json({"type": "error", "message": f"Backtest failed: {e}"})
+
+
+def _run_scanner(state: BTCDumpWebApp, condition: str, limit: int) -> list:
+    """Run market scanner across top coins for given condition."""
+    from btcdump import indicators
+
+    # Fetch top coins by volume
+    try:
+        tickers = state.coin_manager.fetcher.fetch_tickers()
+    except Exception:
+        return []
+
+    # Sort by volume and take top candidates
+    tickers.sort(key=lambda t: float(t.get("quoteVolume", 0)), reverse=True)
+    candidates = [t["symbol"] for t in tickers[:60]]
+
+    CONDITION_MAP = {
+        "rsi_oversold": lambda r: float(r.get("RSI", 50)) < 30,
+        "rsi_overbought": lambda r: float(r.get("RSI", 50)) > 70,
+        "macd_cross_bull": lambda r: float(r.get("MACD", 0)) > float(r.get("MACD_signal", 0)) and float(r.get("MACD_hist", 0)) > 0 and float(r.get("MACD_hist", 0)) < abs(float(r.get("MACD", 1)) * 0.1),
+        "macd_cross_bear": lambda r: float(r.get("MACD", 0)) < float(r.get("MACD_signal", 0)) and float(r.get("MACD_hist", 0)) < 0 and abs(float(r.get("MACD_hist", 0))) < abs(float(r.get("MACD", 1)) * 0.1),
+        "volume_spike": lambda r: float(r.get("volume_ratio", 1)) > 2.5,
+        "bollinger_squeeze": lambda r: float(r.get("bb_width", 0.5)) < 0.03,
+        "strong_trend": lambda r: float(r.get("ADX", 0)) > 40 and float(r.get("efficiency_ratio", 0)) > 0.6,
+        "ichimoku_bull": lambda r: float(r.get("ichimoku_cloud_pos", 0)) > 0 and float(r.get("ichimoku_tk", 0)) > 0,
+        "ichimoku_bear": lambda r: float(r.get("ichimoku_cloud_pos", 0)) < 0 and float(r.get("ichimoku_tk", 0)) < 0,
+    }
+
+    check_fn = CONDITION_MAP.get(condition)
+    if not check_fn:
+        return []
+
+    results = []
+    interval = state.coin_manager.active_interval
+
+    for symbol in candidates:
+        if len(results) >= limit:
+            break
+        try:
+            data = state.coin_manager.fetcher.fetch_with_cache(symbol, interval)
+            enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+            row = enriched.iloc[-1]
+            row_dict = {k: (0 if (hasattr(v, '__float__') and (v != v)) else v) for k, v in row.items()}
+
+            if check_fn(row_dict):
+                ticker = next((t for t in tickers if t["symbol"] == symbol), {})
+                results.append({
+                    "symbol": symbol,
+                    "baseAsset": ticker.get("baseAsset", symbol.replace("USDT", "")),
+                    "lastPrice": ticker.get("lastPrice", 0),
+                    "priceChangePercent": ticker.get("priceChangePercent", 0),
+                    "rsi": round(float(row_dict.get("RSI", 0)), 1),
+                    "adx": round(float(row_dict.get("ADX", 0)), 1),
+                    "volume_ratio": round(float(row_dict.get("volume_ratio", 0)), 2),
+                    "macd_bullish": bool(float(row_dict.get("MACD", 0)) > float(row_dict.get("MACD_signal", 0))),
+                    "bb_width": round(float(row_dict.get("bb_width", 0)), 4),
+                })
+        except Exception:
+            continue
+
+    return results
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8000, config: Optional[AppConfig] = None):
