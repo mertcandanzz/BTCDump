@@ -115,6 +115,8 @@ class FeatureConfig:
         "seasonal_hour_bias", "seasonal_dow_bias",
         # v5.0 Pro: Cycle Detection
         "cycle_phase", "cycle_strength", "dominant_period",
+        # v5.0 Pro: Information Theory
+        "transfer_entropy", "mutual_info_pv",
     )
 
 

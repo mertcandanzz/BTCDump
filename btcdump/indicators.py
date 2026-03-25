@@ -50,6 +50,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _adaptive_ma_features(df)
     df = _seasonality_features(df)
     df = _cycle_features(df)
+    df = _information_theory_features(df)
     return df.copy()  # final defragment
 
 
@@ -1184,6 +1185,94 @@ def _cycle_features(df: pd.DataFrame) -> pd.DataFrame:
     df["cycle_phase"] = cycle_phase
     df["cycle_strength"] = cycle_strength
     df["dominant_period"] = dominant_period
+
+    return df
+
+
+def _information_theory_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Information-theoretic features: transfer entropy proxy, mutual information.
+
+    Transfer Entropy (TE): measures directed information flow from volume to price.
+    High TE(vol→price) = volume changes predict future price changes.
+    This is a simplified estimator using binned conditional probabilities.
+    """
+    c = df["close"]
+    v = df["volume"]
+    ret = c.pct_change().fillna(0)
+    vol_change = v.pct_change().fillna(0)
+
+    window = 50
+    te_vals = pd.Series(0.0, index=df.index)
+    mi_vals = pd.Series(0.0, index=df.index)
+
+    for i in range(window, len(df)):
+        r = ret.iloc[i - window:i].values
+        vc = vol_change.iloc[i - window:i].values
+
+        # Discretize into 3 bins (down/flat/up)
+        r_bins = np.digitize(r, [-0.001, 0.001]) # 0=down, 1=flat, 2=up
+        vc_bins = np.digitize(vc, [-0.1, 0.1])
+
+        # Transfer Entropy: TE(vol→price) = H(price_t | price_t-1) - H(price_t | price_t-1, vol_t-1)
+        # Simplified: conditional entropy reduction when knowing volume
+        n = len(r_bins) - 1
+        if n < 10:
+            continue
+
+        # P(price_t | price_t-1)
+        joint_pp = np.zeros((3, 3))
+        for j in range(1, n + 1):
+            joint_pp[r_bins[j - 1], r_bins[j]] += 1
+        joint_pp /= max(1, joint_pp.sum())
+
+        # P(price_t | price_t-1, vol_t-1) - approximated
+        joint_ppv = np.zeros((3, 3, 3))
+        for j in range(1, n + 1):
+            joint_ppv[r_bins[j - 1], vc_bins[j - 1], r_bins[j]] += 1
+        total = joint_ppv.sum()
+        if total > 0:
+            joint_ppv /= total
+
+        # Entropy calculations
+        def _entropy(p):
+            p = p[p > 0]
+            return -float(np.sum(p * np.log2(p))) if len(p) > 0 else 0
+
+        h_cond_p = 0  # H(price_t | price_t-1)
+        for prev in range(3):
+            marginal = joint_pp[prev, :]
+            s = marginal.sum()
+            if s > 0:
+                h_cond_p += s * _entropy(marginal / s)
+
+        h_cond_pv = 0  # H(price_t | price_t-1, vol_t-1)
+        for prev_p in range(3):
+            for prev_v in range(3):
+                marginal = joint_ppv[prev_p, prev_v, :]
+                s = marginal.sum()
+                if s > 0:
+                    h_cond_pv += s * _entropy(marginal / s)
+
+        te = max(0, h_cond_p - h_cond_pv)
+        te_vals.iloc[i] = te
+
+        # Mutual Information: I(price; volume) - how much do they share
+        joint = np.zeros((3, 3))
+        for j in range(n + 1):
+            joint[r_bins[j], vc_bins[j]] += 1
+        joint /= max(1, joint.sum())
+        p_r = joint.sum(axis=1)
+        p_v = joint.sum(axis=0)
+
+        mi = 0
+        for a in range(3):
+            for b in range(3):
+                if joint[a, b] > 0 and p_r[a] > 0 and p_v[b] > 0:
+                    mi += joint[a, b] * np.log2(joint[a, b] / (p_r[a] * p_v[b]))
+        mi_vals.iloc[i] = max(0, mi)
+
+    df["transfer_entropy"] = te_vals
+    df["mutual_info_pv"] = mi_vals
 
     return df
 
