@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTCDump - All-in-One Signal Engine</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Command Palette (Ctrl+K) -->
+    <div id="cmdPalette" class="cmd-palette" style="display:none">
+        <div class="cmd-backdrop" onclick="closeCmdPalette()"></div>
+        <div class="cmd-box">
+            <input type="text" id="cmdInput" class="cmd-input" placeholder="Search coins... (type to filter)" autocomplete="off" oninput="onCmdSearch(this.value)">
+            <div id="cmdResults" class="cmd-results"></div>
+            <div class="cmd-footer">
+                <span class="cmd-hint">Enter to select</span>
+                <span class="cmd-hint">Esc to close</span>
+                <span class="cmd-hint">Ctrl+K to open</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header id="header">
+        <div class="header-left">
+            <h1>BTCDump<span class="version">4.1</span></h1>
+            <div class="mode-toggle">
+                <button class="mode-toggle-btn active" id="modeSingle" onclick="switchMode('single')">Analysis</button>
+                <button class="mode-toggle-btn" id="modeCompare" onclick="switchMode('compare')">Compare</button>
+            </div>
+        </div>
+        <div class="header-center">
+            <button class="cmd-trigger" onclick="openCmdPalette()">
+                <span class="cmd-trigger-icon">&#x1F50D;</span>
+                <span class="cmd-trigger-text">Search coin...</span>
+                <kbd class="cmd-trigger-kbd">Ctrl+K</kbd>
+            </button>
+        </div>
+        <div class="header-right">
+            <div class="tf-pills" id="tfPills">
+                <button class="tf-pill" data-tf="5m">5m</button>
+                <button class="tf-pill" data-tf="15m">15m</button>
+                <button class="tf-pill" data-tf="30m">30m</button>
+                <button class="tf-pill active" data-tf="1h">1h</button>
+                <button class="tf-pill" data-tf="4h">4h</button>
+                <button class="tf-pill" data-tf="1d">1D</button>
+                <button class="tf-pill" data-tf="1w">1W</button>
+            </div>
+            <div class="header-actions">
+                <div class="auto-refresh-wrap">
+                    <button class="btn btn-ghost btn-icon" id="autoRefreshBtn" onclick="toggleAutoRefresh()" title="Auto-refresh">&#x21BB;</button>
+                    <span class="auto-refresh-badge" id="autoRefreshBadge" style="display:none"></span>
+                </div>
+                <div class="ws-status" id="wsStatus" title="Connection status"></div>
+                <button id="refreshBtn" class="btn btn-primary" onclick="refreshSignal()">Refresh</button>
+                <button class="btn btn-ghost" onclick="openSettings()">&#x2699;</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Ticker Strip -->
+    <div id="tickerStrip"></div>
+
+    <!-- Main Layout -->
+    <main id="mainLayout">
+        <!-- Left Panel -->
+        <aside id="leftPanel">
+            <button class="panel-collapse-btn" id="leftCollapseBtn" onclick="toggleLeftPanel()">&#x276E;</button>
+
+            <!-- Single Mode -->
+            <div id="singleSignalView">
+                <div class="signal-hero" id="signalHero">
+                    <div class="signal-hero-dir" id="signalDirection">--</div>
+                    <div class="signal-hero-conf">
+                        <div class="conf-bar"><div class="conf-bar-fill" id="confBarFill" style="width:0%"></div></div>
+                        <span class="conf-label" id="signalConf">--</span>
+                    </div>
+                </div>
+                <div class="price-section">
+                    <div class="signal-label" id="coinLabel">BTC/USDT</div>
+                    <div class="price-row">
+                        <span id="currentPrice" class="signal-price">--</span>
+                        <span id="priceChange" class="signal-change">--</span>
+                    </div>
+                    <div class="pred-row">
+                        <span class="signal-label">AI Pred</span>
+                        <span id="predPrice" class="signal-pred">--</span>
+                    </div>
+                </div>
+
+                <!-- RSI Gauge -->
+                <div class="gauge-section">
+                    <div class="gauge-item">
+                        <canvas id="rsiGauge" class="gauge-canvas" width="100" height="60"></canvas>
+                        <div class="gauge-label">RSI <strong id="indRSI">--</strong></div>
+                    </div>
+                    <div class="gauge-item">
+                        <div class="rr-display">
+                            <span class="rr-value" id="signalRR">--</span>
+                            <span class="rr-label">R/R</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="indicators-grid">
+                    <div class="ind-card has-tip" onclick="openVerify('RSI')">
+                        <span class="ind-label">RSI <span class="ind-info">?</span></span>
+                        <span id="indRSI" class="ind-value">--</span>
+                        <div class="ind-tip">Relative Strength Index (14). Measures momentum. &lt;30 = oversold (buy signal), &gt;70 = overbought (sell signal). Click to verify on TradingView.</div>
+                    </div>
+                    <div class="ind-card has-tip" onclick="openVerify('MACD')">
+                        <span class="ind-label">MACD <span class="ind-info">?</span></span>
+                        <span id="indMACD" class="ind-value">--</span>
+                        <div class="ind-tip">Moving Average Convergence Divergence (12,26,9). Bull = MACD above signal line (upward momentum). Bear = below (downward). Click to verify.</div>
+                    </div>
+                    <div class="ind-card has-tip" onclick="openVerify('Stoch')">
+                        <span class="ind-label">Stoch <span class="ind-info">?</span></span>
+                        <span id="indStoch" class="ind-value">--</span>
+                        <div class="ind-tip">Stochastic %K (14,3). Oscillator 0-100. &lt;20 = oversold, &gt;80 = overbought. Measures where price closed relative to range. Click to verify.</div>
+                    </div>
+                    <div class="ind-card has-tip" onclick="openVerify('ADX')">
+                        <span class="ind-label">ADX <span class="ind-info">?</span></span>
+                        <span id="indADX" class="ind-value">--</span>
+                        <div class="ind-tip">Average Directional Index (14). Measures trend strength. &lt;20 = no trend, 20-40 = developing, &gt;40 = strong trend. Does NOT show direction. Click to verify.</div>
+                    </div>
+                    <div class="ind-card has-tip" onclick="openVerify('ATR')">
+                        <span class="ind-label">ATR <span class="ind-info">?</span></span>
+                        <span id="indATR" class="ind-value">--</span>
+                        <div class="ind-tip">Average True Range (14). Measures volatility in $. Higher = more volatile price swings. Used for stop-loss placement and R/R calculation. Click to verify.</div>
+                    </div>
+                    <div class="ind-card has-tip">
+                        <span class="ind-label">Vol <span class="ind-info">?</span></span>
+                        <span id="indVol" class="ind-value">--</span>
+                        <div class="ind-tip">Volume Ratio = current volume / 20-period avg volume. &gt;1.5 = high volume (strong move), &lt;0.5 = low volume (weak/unreliable move).</div>
+                    </div>
+                </div>
+
+                <!-- Ensemble Weights with explanations -->
+                <div class="ensemble-section">
+                    <div class="signal-label">Ensemble Weights <span class="ind-info" onclick="toggleEnsembleInfo(event)">?</span></div>
+                    <div id="ensembleInfo" class="ensemble-info" style="display:none">
+                        <p>3 ML models are trained and their predictions are combined. Better-performing models get higher weight (inverse-MAPE weighting).</p>
+                    </div>
+                    <div id="weightsContent" class="weights-bars"></div>
+                    <div class="signal-label" style="margin-top:6px">
+                        MAPE <span class="ind-info" title="Mean Absolute Percentage Error - lower is better. Shows how far off predictions are on average.">?</span>
+                        <strong id="modelMAPE">--</strong>
+                    </div>
+                </div>
+                <div class="reasons-list">
+                    <div class="signal-label">Reasons</div>
+                    <ul id="reasonsContent"></ul>
+                </div>
+            </div>
+
+            <!-- Compare Mode -->
+            <div id="watchlistManager" style="display:none">
+                <div class="panel-header">Watchlist <span class="panel-hint" id="watchlistCount">0/15</span></div>
+                <div class="watchlist-search">
+                    <input type="text" id="watchlistSearchInput" placeholder="Add coin..." oninput="onWatchlistSearch(this.value)" autocomplete="off">
+                    <div id="watchlistSearchDrop" class="coin-search-dropdown" style="display:none"></div>
+                </div>
+                <div id="watchlistItems" class="watchlist-items"></div>
+                <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="refreshWatchlist()">Refresh All</button>
+            </div>
+        </aside>
+
+        <!-- Center Panel -->
+        <section id="centerPanel">
+            <div id="singleModeContent">
+                <div id="chartSection" class="chart-section">
+                    <div class="chart-header">
+                        <span id="chartTitle" class="chart-title">BTC/USDT</span>
+                        <span id="chartPrice" class="chart-live-price"></span>
+                        <span id="lastUpdated" class="chart-updated"></span>
+                    </div>
+                    <canvas id="candlestickChart" class="candlestick-canvas"></canvas>
+                </div>
+                <div id="discussionSection" class="discussion-section">
+                    <div class="panel-header">
+                        AI Discussion
+                        <div class="quick-actions">
+                            <button class="btn btn-sm" onclick="quickAsk('Analyze the current signal')">Analyze</button>
+                            <button class="btn btn-sm" onclick="quickAsk('Is this a good entry? Risks?')">Entry?</button>
+                            <button class="btn btn-sm" onclick="quickAsk('Short-term outlook?')">Outlook</button>
+                        </div>
+                    </div>
+                    <div id="discussionMessages" class="chat-messages"></div>
+                    <div class="chat-input-area">
+                        <div class="discussion-controls">
+                            <label>Rounds: <select id="roundsSelect"><option value="2">2</option><option value="3" selected>3</option></select></label>
+                            <span id="discussionCoinBadge" class="disc-coin-badge">BTC/USDT</span>
+                        </div>
+                        <div class="chat-input-row">
+                            <input type="text" id="discussionInput" placeholder="Ask all models..." onkeydown="if(event.key==='Enter')sendDiscussion()">
+                            <button class="btn btn-primary" onclick="sendDiscussion()">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="compareModeContent" style="display:none">
+                <div class="compare-toolbar">
+                    <span class="compare-title">Multi-Coin Comparison</span>
+                    <div class="compare-filters">
+                        <button class="filter-pill active" onclick="setSignalFilter('all')">All</button>
+                        <button class="filter-pill" onclick="setSignalFilter('buy')">Buys</button>
+                        <button class="filter-pill" onclick="setSignalFilter('sell')">Sells</button>
+                    </div>
+                    <span id="compareProgress" class="panel-hint"></span>
+                    <button class="btn btn-sm" onclick="refreshWatchlist()">Refresh All</button>
+                </div>
+                <div id="comparisonGrid" class="comparison-grid-wrap"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Floating AI Chat -->
+    <button id="chatFab" class="chat-fab" onclick="toggleFloatingChat()">AI</button>
+    <div id="floatingChat" class="floating-chat" style="display:none">
+        <div class="fc-header">
+            <span class="fc-title">AI Chat</span>
+            <div class="fc-context" id="fcContext">BTC/USDT 1h</div>
+            <div class="fc-header-actions">
+                <button class="fc-btn" onclick="minimizeChat()" title="Minimize">&#x2015;</button>
+                <button class="fc-btn" onclick="maximizeChat()" title="Maximize">&#x25A1;</button>
+                <button class="fc-btn" onclick="toggleFloatingChat()" title="Close">&times;</button>
+            </div>
+        </div>
+        <div class="fc-model-bar">
+            <select id="fcModelSelect" class="fc-model-select"></select>
+        </div>
+        <div class="fc-messages" id="fcMessages"></div>
+        <div class="fc-quick">
+            <button onclick="fcQuick('Analyze the signal')">Analyze</button>
+            <button onclick="fcQuick('Risk assessment')">Risk</button>
+            <button onclick="fcQuick('Entry point?')">Entry?</button>
+            <button onclick="fcQuick('Outlook')">Outlook</button>
+        </div>
+        <div class="fc-input">
+            <input type="text" id="fcInput" placeholder="Ask... (@all for group discussion)" onkeydown="if(event.key==='Enter')sendFloatingChat()">
+            <button onclick="sendFloatingChat()">&#x27A4;</button>
+        </div>
+        <div class="fc-resize" onmousedown="startResizeChat(event)"></div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal" style="display:none">
+        <div class="modal-content">
+            <div class="modal-header"><h2>Settings</h2><button class="btn-close" onclick="closeSettings()">&times;</button></div>
+            <div class="modal-body"><div id="settingsForms"></div></div>
+        </div>
+    </div>
+
+    <script src="/static/sparkline.js"></script>
+    <script src="/static/candlestick.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
