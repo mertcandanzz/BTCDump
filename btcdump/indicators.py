@@ -56,6 +56,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _interaction_features(df)
     df = _jump_detection(df)
     df = _kalman_features(df)
+    df = _ou_features(df)
     return df.copy()  # final defragment
 
 
@@ -1556,6 +1557,57 @@ def _kalman_features(df: pd.DataFrame) -> pd.DataFrame:
 
     df["kalman_residual"] = kalman_residuals
     df["kalman_gain"] = kalman_gains
+
+    return df
+
+
+def _ou_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Ornstein-Uhlenbeck mean-reversion parameters from log prices.
+
+    The OU process models price as: dX = theta*(mu - X)*dt + sigma*dW
+    - theta: mean-reversion speed (higher = faster reversion)
+    - mu: equilibrium/fair price
+    - distance: how far current price is from equilibrium
+
+    These are estimated via OLS regression: X(t) - X(t-1) = a + b*X(t-1) + e
+    Then: theta = -b, mu = -a/b, sigma = std(residuals)
+    """
+    log_price = np.log(df["close"].replace(0, np.nan)).ffill()
+
+    window = 60
+    theta_vals = np.zeros(len(df))
+    ou_dist_vals = np.zeros(len(df))
+
+    for i in range(window, len(df)):
+        x = log_price.iloc[i - window:i].values
+        if len(x) < 20 or np.any(np.isnan(x)):
+            continue
+
+        dx = np.diff(x)         # X(t) - X(t-1)
+        x_lag = x[:-1]          # X(t-1)
+
+        # OLS: dx = a + b * x_lag
+        n = len(dx)
+        x_mean = x_lag.mean()
+        dx_mean = dx.mean()
+        cov_xdx = np.sum((x_lag - x_mean) * (dx - dx_mean))
+        var_x = np.sum((x_lag - x_mean) ** 2)
+
+        if var_x > 0:
+            b = cov_xdx / var_x
+            a = dx_mean - b * x_mean
+
+            theta = -b  # mean-reversion speed
+            if b < 0:  # only meaningful if mean-reverting
+                mu = -a / b  # equilibrium log-price
+                # Distance from equilibrium (in %)
+                current_log = x[-1]
+                ou_dist_vals[i] = (current_log - mu) * 100
+
+            theta_vals[i] = max(0, min(1, theta))  # clip to [0, 1]
+
+    df["ou_theta"] = theta_vals
+    df["ou_distance"] = ou_dist_vals
 
     return df
 

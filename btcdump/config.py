@@ -128,6 +128,8 @@ class FeatureConfig:
         "jump_indicator", "jump_magnitude", "continuous_vol",
         # v5.1 Pro: Kalman Filter
         "kalman_residual", "kalman_gain",
+        # v5.1 Pro: Ornstein-Uhlenbeck
+        "ou_theta", "ou_distance",
     )
 
 
