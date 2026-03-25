@@ -107,6 +107,8 @@ class FeatureConfig:
         "di_ratio", "di_spread", "variance_ratio",
         # v5.0 Pro: Whale/Smart Money
         "whale_score", "smart_money_div",
+        # v5.0 Pro: Information Theory
+        "price_entropy",
     )
 
 

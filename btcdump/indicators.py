@@ -46,6 +46,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = df.copy()  # defragment mid-pipeline to avoid PerformanceWarning
     df = _statistical_features(df)
     df = _whale_detection(df)
+    df = _entropy_feature(df)
     return df.copy()  # final defragment
 
 
@@ -875,6 +876,30 @@ def _whale_detection(df: pd.DataFrame) -> pd.DataFrame:
         np.where(price_new_high & vol_declining, -1.0, 0.0),  # bearish: high on declining vol
     )
 
+    return df
+
+
+def _entropy_feature(df: pd.DataFrame) -> pd.DataFrame:
+    """Shannon entropy of price distribution - measures market uncertainty.
+
+    High entropy = random/uncertain, low entropy = ordered/predictable.
+    Computed on discretized returns over rolling window.
+    """
+    ret = df["close"].pct_change()
+    window = 20
+    entropy_vals = pd.Series(0.0, index=df.index)
+
+    for i in range(window, len(df)):
+        chunk = ret.iloc[i - window:i].dropna().values
+        if len(chunk) < 5:
+            continue
+        # Discretize into 5 bins
+        hist, _ = np.histogram(chunk, bins=5)
+        probs = hist / hist.sum()
+        probs = probs[probs > 0]  # avoid log(0)
+        entropy_vals.iloc[i] = float(-np.sum(probs * np.log2(probs)))
+
+    df["price_entropy"] = entropy_vals
     return df
 
 
