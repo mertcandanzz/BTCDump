@@ -666,6 +666,94 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── AI Trade Narrative ────────────────────────────────
+
+    @app.get("/api/coin/{symbol}/narrative")
+    async def get_trade_narrative(symbol: str):
+        """Generate comprehensive market analysis narrative from all indicators."""
+        try:
+            cached = state.coin_manager.signal_cache.get(symbol, {})
+            if not cached or cached.get("status") != "ready":
+                return {"ok": False, "error": "No signal data. Refresh first."}
+
+            # Build comprehensive context
+            direction = cached.get("direction", "HOLD")
+            confidence = cached.get("confidence", 0)
+            price = cached.get("current_price", 0)
+            pred_price = cached.get("predicted_price", 0)
+            rsi = cached.get("rsi", 0)
+            adx = cached.get("adx", 0)
+            macd_bull = cached.get("macd_bullish", False)
+            vol_ratio = cached.get("volume_ratio", 1)
+            rr = cached.get("risk_reward", 0)
+            stoch = cached.get("stoch_k", 50)
+            atr = cached.get("atr", 0)
+
+            # Get regime
+            regime_r = await get_market_regime(symbol)
+            regime = regime_r.get("regime", "unknown") if regime_r.get("ok") else "unknown"
+            strategy = regime_r.get("strategy", "") if regime_r.get("ok") else ""
+
+            # Get RS
+            rs_data = {}
+            if symbol != "BTCUSDT":
+                try:
+                    rs_r = await get_relative_strength(symbol)
+                    if rs_r.get("ok"):
+                        rs_data = rs_r
+                except Exception:
+                    pass
+
+            display = symbol.replace("USDT", "/USDT")
+            interval = state.coin_manager.active_interval
+
+            sections = []
+
+            # Signal Summary
+            conf_desc = "high" if confidence > 65 else "moderate" if confidence > 45 else "low"
+            sections.append(f"**{display} ({interval}) - {direction}** (Confidence: {confidence:.0f}% - {conf_desc})")
+            sections.append(f"Current: ${price:,.2f} | AI Prediction: ${pred_price:,.2f} ({cached.get('change_pct', 0):+.2f}%)")
+
+            # Market Regime
+            regime_emoji = {"trending_up": "📈", "trending_down": "📉", "breakout": "💥", "range": "↔️"}.get(regime, "❓")
+            sections.append(f"\n**Market Regime:** {regime_emoji} {regime.replace('_',' ').title()} → {strategy}")
+
+            # Technical Analysis
+            ta = []
+            if rsi < 30: ta.append(f"RSI={rsi:.0f} (OVERSOLD - potential reversal)")
+            elif rsi > 70: ta.append(f"RSI={rsi:.0f} (OVERBOUGHT - potential reversal)")
+            else: ta.append(f"RSI={rsi:.0f} ({'bullish zone' if rsi > 50 else 'bearish zone'})")
+
+            ta.append(f"MACD: {'Bullish' if macd_bull else 'Bearish'} | ADX: {adx:.0f} ({'strong trend' if adx > 40 else 'developing' if adx > 20 else 'no trend'})")
+            ta.append(f"Stochastic: {stoch:.0f} | Volume: {vol_ratio:.1f}x {'(HIGH)' if vol_ratio > 1.5 else '(normal)' if vol_ratio > 0.8 else '(LOW - caution)'}")
+            sections.append("\n**Technical:**\n" + "\n".join(f"• {t}" for t in ta))
+
+            # Relative Strength
+            if rs_data:
+                rs_val = rs_data.get("rs_ratio", 0)
+                rs_class = rs_data.get("classification", "neutral")
+                sections.append(f"\n**vs BTC:** {rs_val:+.2f}% ({rs_class.replace('_',' ')})")
+
+            # Risk Assessment
+            risk = []
+            risk.append(f"ATR: ${atr:,.2f} | Risk/Reward: {rr:.1f}")
+            agreement = cached.get("model_agreement", 0) * 100
+            risk.append(f"Model Agreement: {agreement:.0f}% | Confluence: {cached.get('indicator_confluence', 0)}/5")
+            sections.append("\n**Risk:**\n" + "\n".join(f"• {r}" for r in risk))
+
+            # Actionable Conclusion
+            if direction == "HOLD":
+                sections.append("\n**Action:** WAIT. No clear edge. Monitor for regime change.")
+            elif "STRONG" in direction:
+                sections.append(f"\n**Action:** {'Enter LONG' if 'BUY' in direction else 'Enter SHORT'} with conviction. All systems aligned.")
+            else:
+                sections.append(f"\n**Action:** {'Consider LONG' if 'BUY' in direction else 'Consider SHORT'} with {'tight' if regime == 'range' else 'normal'} stops. {conf_desc.capitalize()} confidence.")
+
+            narrative = "\n".join(sections)
+            return {"ok": True, "narrative": narrative, "symbol": symbol}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Strategy Comparison ────────────────────────────────
 
     @app.get("/api/coin/{symbol}/strategy-compare")

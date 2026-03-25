@@ -715,6 +715,24 @@ async function updateOutcomes() {
     } catch(e) {}
 }
 
+// ── AI Trade Narrative ──
+async function generateNarrative() {
+    try {
+        const r = await fetch(`/api/coin/${activeSymbol}/narrative`);
+        const j = await r.json();
+        if (!j.ok) { toast(j.error || 'No data', 'error'); return; }
+
+        // Show in discussion panel
+        addDiscMsg('system', '--- AI Market Report ---');
+        const lines = j.narrative.split('\n');
+        lines.forEach(line => {
+            if (line.trim()) addDiscMsg('system', line.replace(/\*\*/g, ''));
+        });
+        addDiscMsg('system', '--- End Report ---');
+        toast('AI Report generated', 'success');
+    } catch(e) { toast('Report failed', 'error'); }
+}
+
 // ── Market Regime ──
 async function loadRegime(sym) {
     try {
