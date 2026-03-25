@@ -19,11 +19,17 @@ const TVChart = (() => {
     let _dragging=false, _dragStartX=0, _dragStartView=0;
     let _rulerActive=false, _rulerStart=null, _rulerEnd=null;
     let _srLevels=[]; // support/resistance levels
+    let _fibLevels=[]; // fibonacci retracement levels
     let _w=0, _h=0, _dpr=1;
     const PAD_R=72, PAD_T=8, PAD_B=26;
 
     function setSRLevels(levels) {
         _srLevels = levels || [];
+        if (_canvas) render();
+    }
+
+    function setFibLevels(levels) {
+        _fibLevels = levels || [];
         if (_canvas) render();
     }
 
@@ -141,6 +147,31 @@ const TVChart = (() => {
                 ctx.textAlign = 'left';
                 const label = `${isSup ? 'S' : 'R'} $${fmtP(sr.price)} (${sr.touches}x)`;
                 ctx.fillText(label, 4, y - 3);
+            });
+        }
+
+        // Fibonacci levels
+        if (_fibLevels.length) {
+            const fibColors = {
+                '0%': '#888', '23.6%': '#f7b924', '38.2%': '#ff9800',
+                '50%': '#9c27b0', '61.8%': '#2196f3', '78.6%': '#00bcd4', '100%': '#888',
+            };
+            _fibLevels.forEach(fib => {
+                if (fib.price < minP || fib.price > maxP) return;
+                const y = Math.round(py(fib.price)) + 0.5;
+                const color = fibColors[fib.name] || '#666';
+                ctx.setLineDash([3, 5]);
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 0.8;
+                ctx.globalAlpha = 0.6;
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 1;
+                // Label on right side
+                ctx.font = '8px -apple-system,sans-serif';
+                ctx.fillStyle = color;
+                ctx.textAlign = 'right';
+                ctx.fillText(`Fib ${fib.name} $${fmtP(fib.price)}`, chartW - 4, y - 2);
             });
         }
 
@@ -326,7 +357,7 @@ const TVChart = (() => {
     function fmtP(p) { if(p>=10000) return p.toLocaleString(undefined,{maximumFractionDigits:0}); if(p>=1000) return p.toLocaleString(undefined,{maximumFractionDigits:1}); if(p>=1) return p.toFixed(2); if(p>=0.01) return p.toFixed(4); return p.toFixed(6); }
     function fmtVol(v) { if(v>=1e9) return (v/1e9).toFixed(1)+'B'; if(v>=1e6) return (v/1e6).toFixed(1)+'M'; if(v>=1e3) return (v/1e3).toFixed(1)+'K'; return v.toFixed(0); }
 
-    return { init, render, setSRLevels };
+    return { init, render, setSRLevels, setFibLevels };
 })();
 
 function drawCandlestick(canvas, candles) {

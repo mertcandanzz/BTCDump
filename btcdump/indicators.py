@@ -40,6 +40,8 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _pattern_features(df)
     df = _ichimoku(df)
     df = _volume_profile(df)
+    df = _pivot_points(df)
+    df = _candlestick_patterns(df)
     return df
 
 
@@ -615,6 +617,159 @@ def _volume_profile(df: pd.DataFrame, bins: int = 20) -> pd.DataFrame:
     df["vp_poc_dist"] = poc_dist
     df["vp_va_position"] = va_position
     return df
+
+
+def _pivot_points(df: pd.DataFrame) -> pd.DataFrame:
+    """Classic Pivot Points: price position relative to daily pivots.
+
+    Pivot = (High_prev + Low_prev + Close_prev) / 3
+    R1 = 2*Pivot - Low_prev,  S1 = 2*Pivot - High_prev
+    R2 = Pivot + (High_prev - Low_prev),  S2 = Pivot - (High_prev - Low_prev)
+
+    We compute on rolling 24-bar basis (proxy for daily on 1h data)
+    and normalize as distance from price.
+    """
+    c, h, l = df["close"], df["high"], df["low"]
+    window = 24  # ~1 day on 1h data
+
+    prev_h = h.rolling(window).max().shift(1)
+    prev_l = l.rolling(window).min().shift(1)
+    prev_c = c.shift(1)
+
+    pivot = (prev_h + prev_l + prev_c) / 3
+    r1 = 2 * pivot - prev_l
+    s1 = 2 * pivot - prev_h
+    r2 = pivot + (prev_h - prev_l)
+    s2 = pivot - (prev_h - prev_l)
+
+    # Normalize as % distance from current price
+    df["pivot_dist"] = (c - pivot) / c.replace(0, np.nan) * 100
+    df["pivot_r1_dist"] = (r1 - c) / c.replace(0, np.nan) * 100
+    df["pivot_s1_dist"] = (c - s1) / c.replace(0, np.nan) * 100
+
+    # Position within S2-R2 range (0 = at S2, 1 = at R2)
+    pivot_range = (r2 - s2).replace(0, np.nan)
+    df["pivot_position"] = (c - s2) / pivot_range
+
+    return df
+
+
+def _candlestick_patterns(df: pd.DataFrame) -> pd.DataFrame:
+    """Quantified candlestick pattern detection.
+
+    Returns scores (not booleans) so ML can learn pattern strength.
+    """
+    c, o, h, l = df["close"], df["open"], df["high"], df["low"]
+    body = c - o  # positive = bullish
+    body_abs = body.abs()
+    full_range = (h - l).replace(0, np.nan)
+    upper_wick = h - pd.concat([c, o], axis=1).max(axis=1)
+    lower_wick = pd.concat([c, o], axis=1).min(axis=1) - l
+
+    # ── Doji: tiny body relative to range ──
+    # Score: 1.0 = perfect doji (body=0), 0.0 = full body
+    doji_score = 1.0 - (body_abs / full_range).clip(0, 1)
+    df["pattern_doji"] = doji_score
+
+    # ── Hammer / Hanging Man: long lower wick, small body at top ──
+    # Score: lower_wick > 2x body AND upper_wick < body
+    hammer_cond = (lower_wick > body_abs * 2) & (upper_wick < body_abs * 0.5)
+    df["pattern_hammer"] = np.where(
+        hammer_cond,
+        lower_wick / full_range,  # strength: how long is the wick
+        0.0,
+    )
+
+    # ── Shooting Star / Inverted Hammer: long upper wick ──
+    star_cond = (upper_wick > body_abs * 2) & (lower_wick < body_abs * 0.5)
+    df["pattern_shooting_star"] = np.where(
+        star_cond,
+        upper_wick / full_range,
+        0.0,
+    )
+
+    # ── Three White Soldiers: 3 consecutive bullish with higher closes ──
+    bull1 = body.shift(2) > 0
+    bull2 = body.shift(1) > 0
+    bull3 = body > 0
+    higher1 = c.shift(1) > c.shift(2)
+    higher2 = c > c.shift(1)
+    soldiers = bull1 & bull2 & bull3 & higher1 & higher2
+    # Strength: average body size of the 3 candles
+    avg_body = (body_abs + body_abs.shift(1) + body_abs.shift(2)) / 3
+    df["pattern_three_soldiers"] = np.where(
+        soldiers, avg_body / full_range, 0.0,
+    )
+
+    # ── Three Black Crows: opposite of soldiers ──
+    bear1 = body.shift(2) < 0
+    bear2 = body.shift(1) < 0
+    bear3 = body < 0
+    lower1 = c.shift(1) < c.shift(2)
+    lower2 = c < c.shift(1)
+    crows = bear1 & bear2 & bear3 & lower1 & lower2
+    df["pattern_three_crows"] = np.where(
+        crows, avg_body / full_range, 0.0,
+    )
+
+    # ── Morning Star: bearish + doji/small + bullish (reversal) ──
+    morning = (body.shift(2) < 0) & (body_abs.shift(1) < body_abs.shift(2) * 0.3) & (body > 0) & (c > (o.shift(2) + c.shift(2)) / 2)
+    df["pattern_morning_star"] = np.where(morning, body_abs / full_range, 0.0)
+
+    # ── Evening Star: bullish + doji/small + bearish (reversal) ──
+    evening = (body.shift(2) > 0) & (body_abs.shift(1) < body_abs.shift(2) * 0.3) & (body < 0) & (c < (o.shift(2) + c.shift(2)) / 2)
+    df["pattern_evening_star"] = np.where(evening, body_abs / full_range, 0.0)
+
+    return df
+
+
+def compute_fibonacci_levels(df: pd.DataFrame, lookback: int = 100) -> list[dict]:
+    """Auto-detect swing high/low and compute Fibonacci retracement levels.
+
+    Returns levels as list of dicts for chart rendering.
+    """
+    if len(df) < lookback:
+        return []
+
+    chunk = df.tail(lookback)
+    highs = chunk["high"].values
+    lows = chunk["low"].values
+    closes = chunk["close"].values
+
+    swing_high_idx = int(np.argmax(highs))
+    swing_low_idx = int(np.argmin(lows))
+    swing_high = float(highs[swing_high_idx])
+    swing_low = float(lows[swing_low_idx])
+
+    if swing_high <= swing_low:
+        return []
+
+    current = float(closes[-1])
+    diff = swing_high - swing_low
+
+    # Determine trend: if swing low is more recent, uptrend retracement
+    is_uptrend = swing_low_idx > swing_high_idx
+
+    FIB_RATIOS = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
+    FIB_NAMES = ["0%", "23.6%", "38.2%", "50%", "61.8%", "78.6%", "100%"]
+
+    levels = []
+    for ratio, name in zip(FIB_RATIOS, FIB_NAMES):
+        if is_uptrend:
+            # Retracing down from high
+            price = swing_high - diff * ratio
+        else:
+            # Retracing up from low
+            price = swing_low + diff * ratio
+
+        levels.append({
+            "ratio": ratio,
+            "name": name,
+            "price": round(price, 6),
+            "distance_pct": round((price - current) / current * 100, 2),
+        })
+
+    return levels
 
 
 # ---------------------------------------------------------------------------

@@ -175,7 +175,7 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
     FEATURE_DESC = {
         "close":"Closing price","volume":"Trading volume","RSI":"Relative Strength Index (14)","MACD":"MACD line (12-26 EMA)","volume_ratio":"Volume / 20-period avg","ma5":"5-period SMA","ma20":"20-period SMA","ma50":"50-period SMA","BB_upper":"Upper Bollinger Band","BB_lower":"Lower Bollinger Band","ATR":"Average True Range (14)","stoch_k":"Stochastic %K (14)","stoch_d":"Stochastic %D (3)","ADX":"Avg Directional Index (14)","OBV_norm":"On-Balance Volume z-score","ROC":"Rate of Change (10)","williams_r":"Williams %R (14)","CCI":"Commodity Channel Index (20)","MFI":"Money Flow Index (14)","returns_1":"1-candle return","returns_5":"5-candle return","price_momentum":"10-bar price momentum","volatility_10":"10-period return volatility","high_low_range":"Candle range % of price","parkinson_vol":"Parkinson volatility","atr_ratio":"ATR expansion ratio","body_ratio":"Candle body ratio (0=doji,1=full)","buying_pressure":"Close position in range","upper_shadow":"Upper wick ratio","lower_shadow":"Lower wick ratio","bb_pct_b":"Bollinger %B position","bb_width":"BB width (squeeze)","vol_delta":"Volume delta (buy/sell)","ad_norm":"Accumulation/Distribution","hh_streak":"Higher highs streak","ll_streak":"Lower lows streak","dist_from_high":"Distance from 20-bar high","dist_from_low":"Distance from 20-bar low","rsi_momentum":"RSI acceleration","macd_hist_slope":"MACD histogram slope","close_ma_ratio":"Price vs MA20 ratio","price_zscore":"Price z-score","vwap_dist":"VWAP distance in ATR",
         # v5.0 Pro Features
-        "efficiency_ratio":"Kaufman ER - trend efficiency (0=chop,1=clean trend)","choppiness":"Choppiness Index (>61.8=chop,<38.2=trend)","adx_slope":"ADX 5-bar change (trend strengthening/weakening)","tsi":"True Strength Index (double-smoothed momentum)","rsi_divergence":"Price-RSI divergence (positive=bullish div)","returns_10":"10-candle return","returns_20":"20-candle return","momentum_quality":"Directional Sharpe (return/volatility)","garch_proxy":"GARCH proxy (short/long vol ratio, >1=expanding)","vol_of_vol":"Volatility of volatility (regime transition signal)","yang_zhang_vol":"Yang-Zhang vol (state-of-art OHLCV estimator)","volume_trend":"Volume slope (rising=accumulation)","amihud_illiq":"Amihud illiquidity (higher=less liquid)","hour_sin":"Hour sine (cyclical time feature)","hour_cos":"Hour cosine (cyclical time feature)","dow_sin":"Day-of-week sine (weekend/weekday cycle)","dow_cos":"Day-of-week cosine","skewness_20":"Return skewness (neg=left tail risk)","kurtosis_20":"Return kurtosis (high=extreme moves likely)","keltner_position":"Keltner Channel position (ATR-based bands)","squeeze_ratio":"BB/Keltner squeeze (<1=squeeze,breakout imminent)","engulfing_score":"Engulfing pattern strength (pos=bullish)","consecutive_dir":"Consecutive candle direction streak","ofi_14":"Order Flow Imbalance 14-bar (buy vs sell pressure proxy)","pv_divergence":"Price-Volume divergence (high=thin move, low=confirmed)","ichimoku_tk":"Ichimoku Tenkan-Kijun cross (% of price, pos=bullish)","ichimoku_cloud_pos":"Price position vs Ichimoku cloud (>0=above)","ichimoku_cloud_width":"Ichimoku cloud thickness (% of price, thin=weak S/R)","ichimoku_chikou":"Chikou span: price vs 26 bars ago (% change)","ichimoku_kijun_dist":"Distance from Kijun-sen baseline (mean-reversion)","vp_poc_dist":"Distance from Volume POC (Point of Control, %)","vp_va_position":"Position within Value Area (0=low, 1=high, >1=above)",
+        "efficiency_ratio":"Kaufman ER - trend efficiency (0=chop,1=clean trend)","choppiness":"Choppiness Index (>61.8=chop,<38.2=trend)","adx_slope":"ADX 5-bar change (trend strengthening/weakening)","tsi":"True Strength Index (double-smoothed momentum)","rsi_divergence":"Price-RSI divergence (positive=bullish div)","returns_10":"10-candle return","returns_20":"20-candle return","momentum_quality":"Directional Sharpe (return/volatility)","garch_proxy":"GARCH proxy (short/long vol ratio, >1=expanding)","vol_of_vol":"Volatility of volatility (regime transition signal)","yang_zhang_vol":"Yang-Zhang vol (state-of-art OHLCV estimator)","volume_trend":"Volume slope (rising=accumulation)","amihud_illiq":"Amihud illiquidity (higher=less liquid)","hour_sin":"Hour sine (cyclical time feature)","hour_cos":"Hour cosine (cyclical time feature)","dow_sin":"Day-of-week sine (weekend/weekday cycle)","dow_cos":"Day-of-week cosine","skewness_20":"Return skewness (neg=left tail risk)","kurtosis_20":"Return kurtosis (high=extreme moves likely)","keltner_position":"Keltner Channel position (ATR-based bands)","squeeze_ratio":"BB/Keltner squeeze (<1=squeeze,breakout imminent)","engulfing_score":"Engulfing pattern strength (pos=bullish)","consecutive_dir":"Consecutive candle direction streak","ofi_14":"Order Flow Imbalance 14-bar (buy vs sell pressure proxy)","pv_divergence":"Price-Volume divergence (high=thin move, low=confirmed)","ichimoku_tk":"Ichimoku Tenkan-Kijun cross (% of price, pos=bullish)","ichimoku_cloud_pos":"Price position vs Ichimoku cloud (>0=above)","ichimoku_cloud_width":"Ichimoku cloud thickness (% of price, thin=weak S/R)","ichimoku_chikou":"Chikou span: price vs 26 bars ago (% change)","ichimoku_kijun_dist":"Distance from Kijun-sen baseline (mean-reversion)","vp_poc_dist":"Distance from Volume POC (Point of Control, %)","vp_va_position":"Position within Value Area (0=low, 1=high, >1=above)","pivot_dist":"Distance from pivot point (% of price)","pivot_r1_dist":"Distance to R1 resistance (%)","pivot_s1_dist":"Distance to S1 support (%)","pivot_position":"Position within S2-R2 range (0=S2, 1=R2)","pattern_doji":"Doji strength (1=perfect doji, indecision)","pattern_hammer":"Hammer/HangingMan strength (bullish reversal)","pattern_shooting_star":"Shooting Star strength (bearish reversal)","pattern_three_soldiers":"Three White Soldiers (strong bull continuation)","pattern_three_crows":"Three Black Crows (strong bear continuation)","pattern_morning_star":"Morning Star (bullish reversal, 3-candle)","pattern_evening_star":"Evening Star (bearish reversal, 3-candle)",
     }
 
     @app.get("/api/feature-importance")
@@ -216,6 +216,56 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
             return {"ok": True, "condition": condition, "results": results}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    # ── Fibonacci Retracement ──────────────────────────────
+
+    @app.get("/api/coin/{symbol}/fibonacci")
+    async def get_fibonacci(symbol: str, lookback: int = 100):
+        try:
+            def _calc():
+                from btcdump.indicators import compute_fibonacci_levels
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                return compute_fibonacci_levels(data.df, lookback)
+            levels = await asyncio.to_thread(_calc)
+            return {"ok": True, "levels": levels, "symbol": symbol}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Market Breadth ───────────────────────────────────
+
+    @app.get("/api/market-breadth")
+    async def get_market_breadth():
+        """Aggregate health of watchlist coins."""
+        cache = state.coin_manager.signal_cache
+        watchlist = state.coin_manager.watchlist
+        total = len(watchlist)
+        if not total:
+            return {"ok": True, "total": 0}
+
+        bullish = sum(1 for s in watchlist if "BUY" in cache.get(s, {}).get("direction", ""))
+        bearish = sum(1 for s in watchlist if "SELL" in cache.get(s, {}).get("direction", ""))
+        neutral = total - bullish - bearish
+
+        rsi_values = [cache.get(s, {}).get("rsi", 0) for s in watchlist if cache.get(s, {}).get("rsi")]
+        avg_rsi = round(sum(rsi_values) / len(rsi_values), 1) if rsi_values else 0
+
+        confidences = [cache.get(s, {}).get("confidence", 0) for s in watchlist if cache.get(s, {}).get("confidence")]
+        avg_conf = round(sum(confidences) / len(confidences), 1) if confidences else 0
+
+        return {
+            "ok": True,
+            "total": total,
+            "bullish": bullish,
+            "bearish": bearish,
+            "neutral": neutral,
+            "bullish_pct": round(bullish / total * 100),
+            "bearish_pct": round(bearish / total * 100),
+            "avg_rsi": avg_rsi,
+            "avg_confidence": avg_conf,
+            "sentiment": "bullish" if bullish > bearish else "bearish" if bearish > bullish else "neutral",
+        }
 
     # ── Signal History ─────────────────────────────────────
 

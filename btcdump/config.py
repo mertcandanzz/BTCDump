@@ -93,6 +93,12 @@ class FeatureConfig:
         "ichimoku_chikou", "ichimoku_kijun_dist",
         # v5.0 Pro: Volume Profile
         "vp_poc_dist", "vp_va_position",
+        # v5.0 Pro: Pivot Points
+        "pivot_dist", "pivot_r1_dist", "pivot_s1_dist", "pivot_position",
+        # v5.0 Pro: Candlestick Patterns
+        "pattern_doji", "pattern_hammer", "pattern_shooting_star",
+        "pattern_three_soldiers", "pattern_three_crows",
+        "pattern_morning_star", "pattern_evening_star",
     )
 
 

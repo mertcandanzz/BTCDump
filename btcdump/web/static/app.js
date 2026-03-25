@@ -89,7 +89,7 @@ function switchMode(mode) {
     document.getElementById('compareModeContent').style.display=mode==='compare'?'':'none';
     document.getElementById('mainLayout').classList.toggle('compare-mode',mode==='compare');
     updateFcContext();
-    if(mode==='compare'){renderWatchlistMgr();loadWatchlistOverview();}
+    if(mode==='compare'){renderWatchlistMgr();loadWatchlistOverview();loadMarketBreadth();}
 }
 
 // ── Timeframe Pills ──
@@ -274,6 +274,7 @@ async function loadCandlestickChart(sym){
             const last=j.candles[j.candles.length-1],prev=j.candles[j.candles.length-2];
             const pe=document.getElementById('chartPrice');pe.textContent='$'+fmtP(last.c);pe.className='chart-live-price '+(last.c>=prev.c?'up':'down');
             loadSRLevels(sym);
+            loadFibLevels(sym);
         }
     }catch(e){}
 }
@@ -824,6 +825,32 @@ async function loadSRLevels(sym) {
         const j = await r.json();
         if (j.ok && j.levels?.length) {
             TVChart.setSRLevels(j.levels);
+        }
+    } catch(e) {}
+}
+
+// ── Fibonacci Levels ──
+async function loadFibLevels(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/fibonacci`);
+        const j = await r.json();
+        if (j.ok && j.levels?.length) {
+            TVChart.setFibLevels(j.levels);
+        }
+    } catch(e) {}
+}
+
+// ── Market Breadth ──
+async function loadMarketBreadth() {
+    try {
+        const r = await fetch('/api/market-breadth');
+        const j = await r.json();
+        if (!j.ok || !j.total) return;
+        // Update the compare toolbar with breadth info
+        const el = document.getElementById('compareProgress');
+        if (el && currentMode === 'compare') {
+            const sentColor = j.sentiment === 'bullish' ? 'var(--green)' : j.sentiment === 'bearish' ? 'var(--red)' : 'var(--yellow)';
+            el.innerHTML = `<span style="color:var(--green)">${j.bullish}B</span> / <span style="color:var(--yellow)">${j.neutral}N</span> / <span style="color:var(--red)">${j.bearish}S</span> | RSI:${j.avg_rsi} | <span style="color:${sentColor}">${j.sentiment.toUpperCase()}</span>`;
         }
     } catch(e) {}
 }
