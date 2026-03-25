@@ -102,6 +102,9 @@ class FeatureConfig:
         # v5.0 Pro: Microstructure
         "trade_intensity", "pin_bar_score", "gap_pct",
         "intrabar_vol_ratio", "close_position_avg",
+        # v5.0 Pro: Statistical
+        "hurst_exponent", "autocorr_1", "autocorr_5",
+        "di_ratio", "di_spread", "variance_ratio",
     )
 
 

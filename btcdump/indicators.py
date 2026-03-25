@@ -43,7 +43,8 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _pivot_points(df)
     df = _candlestick_patterns(df)
     df = _microstructure_features(df)
-    return df
+    df = _statistical_features(df)
+    return df.copy()  # defragment after many column insertions
 
 
 # ---------------------------------------------------------------------------
@@ -769,6 +770,67 @@ def _microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
     # Rolling average tells about persistent buying/selling pressure
     close_pos = (c - l) / (h - l).replace(0, np.nan)
     df["close_position_avg"] = close_pos.rolling(5).mean()
+
+    return df
+
+
+def _statistical_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Advanced statistical features: Hurst exponent, auto-correlation,
+    DI+/DI- ratio, fractal dimension proxy."""
+    c, h, l = df["close"], df["high"], df["low"]
+    ret = c.pct_change()
+
+    # ── Hurst Exponent (simplified rescaled range method) ──
+    # H > 0.5 = trending (persistent), H < 0.5 = mean-reverting, H = 0.5 = random
+    window = 100
+    hurst = pd.Series(0.5, index=df.index)
+    for i in range(window, len(df)):
+        chunk = ret.iloc[i - window:i].dropna().values
+        if len(chunk) < 20:
+            continue
+        mean_r = chunk.mean()
+        deviations = np.cumsum(chunk - mean_r)
+        R = deviations.max() - deviations.min()
+        S = chunk.std()
+        if S > 0 and R > 0:
+            hurst.iloc[i] = np.log(R / S) / np.log(window)
+    df["hurst_exponent"] = hurst
+
+    # ── Auto-correlation (lag-1 return serial correlation) ──
+    # Positive = momentum persistence, Negative = mean-reversion
+    df["autocorr_1"] = ret.rolling(20).apply(
+        lambda x: x.autocorr(lag=1) if len(x) > 2 else 0, raw=False,
+    )
+
+    # ── Auto-correlation lag-5 (weekly pattern on 1h) ──
+    df["autocorr_5"] = ret.rolling(30).apply(
+        lambda x: pd.Series(x).autocorr(lag=5) if len(x) > 6 else 0, raw=False,
+    )
+
+    # ── DI+/DI- ratio (directional movement components) ──
+    # We compute ADX but the ratio of DI+ to DI- tells direction
+    high_diff = h.diff()
+    low_diff = -l.diff()
+    plus_dm = np.where((high_diff > low_diff) & (high_diff > 0), high_diff, 0.0)
+    minus_dm = np.where((low_diff > high_diff) & (low_diff > 0), low_diff, 0.0)
+
+    atr_col = df.get("ATR", pd.Series(1.0, index=df.index))
+    plus_di = pd.Series(plus_dm, index=df.index).rolling(14).mean() / atr_col.replace(0, np.nan)
+    minus_di = pd.Series(minus_dm, index=df.index).rolling(14).mean() / atr_col.replace(0, np.nan)
+
+    # DI ratio: >1 = bullish dominance, <1 = bearish dominance
+    df["di_ratio"] = plus_di / minus_di.replace(0, np.nan)
+
+    # DI spread: normalized difference
+    df["di_spread"] = (plus_di - minus_di) / (plus_di + minus_di).replace(0, np.nan)
+
+    # ── Return Variance Ratio (Lo-MacKinlay) ──
+    # Tests for random walk. VR(q) ≈ 1 if random, >1 if trending, <1 if mean-reverting
+    q = 5
+    var_1 = ret.rolling(20).var()
+    ret_q = c.pct_change(q)
+    var_q = ret_q.rolling(20).var()
+    df["variance_ratio"] = (var_q / (q * var_1)).replace([np.inf, -np.inf], np.nan)
 
     return df
 
