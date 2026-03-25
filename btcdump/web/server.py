@@ -73,6 +73,29 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
+    # ── Startup: pre-load data ─────────────────────────────
+
+    @app.on_event("startup")
+    async def startup_preload():
+        """Pre-load market data so dashboard isn't empty on first visit."""
+        try:
+            logger.info("Pre-loading watchlist signals...")
+            # Load saved settings
+            saved_wl = state.settings.get("watchlist")
+            if saved_wl:
+                state.coin_manager.set_watchlist(saved_wl)
+
+            # Compute signal for active coin in background
+            async def _preload():
+                try:
+                    await asyncio.to_thread(state.coin_manager.compute_signal, state.coin_manager.active_symbol)
+                    logger.info("Pre-loaded signal for %s", state.coin_manager.active_symbol)
+                except Exception as e:
+                    logger.warning("Pre-load failed: %s", e)
+            asyncio.create_task(_preload())
+        except Exception as e:
+            logger.warning("Startup preload error: %s", e)
+
     # ── HTML ──────────────────────────────────────────────
 
     @app.get("/", response_class=HTMLResponse)
@@ -2686,7 +2709,7 @@ BTCDump AI Signal Engine v5.1
     async def market_summary():
         """Quick market overview: BTC dominance proxy, total market sentiment."""
         try:
-            tickers = state.coin_manager.fetcher.fetch_tickers()
+            tickers = await asyncio.to_thread(state.coin_manager.fetcher.fetch_tickers)
             total_vol = sum(float(t.get("quoteVolume", 0)) for t in tickers)
             btc_vol = next((float(t.get("quoteVolume", 0)) for t in tickers if t["symbol"] == "BTCUSDT"), 0)
             eth_vol = next((float(t.get("quoteVolume", 0)) for t in tickers if t["symbol"] == "ETHUSDT"), 0)

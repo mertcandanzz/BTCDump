@@ -1455,14 +1455,14 @@ async function loadDashboard() {
     grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-muted)">Loading dashboard...</div>';
     try {
 
-    // Fetch all data in parallel
-    const [healthR, fngR, marketR, dashR, perfR, breadthR] = await Promise.allSettled([
+    // Fetch live data in parallel - market data always works, signal data may be empty
+    const [healthR, fngR, marketR, dashR, perfR, coinsR] = await Promise.allSettled([
         fetch('/api/health').then(r => r.json()),
         fetch('/api/fear-greed').then(r => r.json()),
         fetch('/api/market-summary').then(r => r.json()),
         fetch('/api/dashboard').then(r => r.json()),
         fetch('/api/performance').then(r => r.json()),
-        fetch('/api/market-breadth').then(r => r.json()),
+        fetch('/api/coins?limit=10').then(r => r.json()),
     ]);
 
     const health = healthR.status === 'fulfilled' ? healthR.value : {};
@@ -1470,113 +1470,118 @@ async function loadDashboard() {
     const market = marketR.status === 'fulfilled' ? marketR.value : {};
     const dash = dashR.status === 'fulfilled' ? dashR.value : {};
     const perf = perfR.status === 'fulfilled' ? perfR.value : {};
-    const breadth = breadthR.status === 'fulfilled' ? breadthR.value : {};
+    const coins = coinsR.status === 'fulfilled' ? coinsR.value : {};
 
     let h = '';
 
-    // Card 1: Platform Status
-    h += `<div class="dash-card">
-        <div class="dash-card-title">Platform <span style="color:var(--green);font-size:8px">v${health.version || '5.1'}</span></div>
-        <div class="dash-card-body">
-            <div class="dash-stat"><span class="dash-stat-label">ML Features</span><span class="dash-stat-value">${health.ml_features || 114}</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">Dimensions</span><span class="dash-stat-value">${health.ml_dimensions || 2280}</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">API Routes</span><span class="dash-stat-value">${health.api_routes || 100}</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">Cached Signals</span><span class="dash-stat-value">${health.cached_signals || 0}</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">WS Clients</span><span class="dash-stat-value">${health.websocket_clients || 0}</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">LLM Providers</span><span class="dash-stat-value">${health.llm_providers || 0}</span></div>
+    // Card 1: Live Prices (ALWAYS works - from Binance tickers)
+    const topCoins = (coins.coins || []).slice(0, 6);
+    h += `<div class="dash-card full-width">
+        <div class="dash-card-title">Live Prices
+            <button class="btn btn-sm btn-primary" onclick="dashboardRefreshSignals()" style="font-size:9px">Compute All Signals</button>
         </div>
-    </div>`;
+        <div class="dash-card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px">`;
+    topCoins.forEach(c => {
+        const chg = parseFloat(c.priceChangePercent) || 0;
+        const chgColor = chg >= 0 ? 'var(--green)' : 'var(--red)';
+        h += `<div style="padding:6px 8px;background:var(--bg);border-radius:var(--radius-sm);cursor:pointer" onclick="selectCoin('${c.symbol}');switchMode('single')">
+            <div style="font-weight:700;font-size:12px">${c.baseAsset || c.symbol.replace('USDT','')}</div>
+            <div style="font-size:14px;font-weight:800;font-variant-numeric:tabular-nums">$${fmtP(c.lastPrice)}</div>
+            <div style="font-size:10px;font-weight:600;color:${chgColor}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%</div>
+        </div>`;
+    });
+    h += `</div></div>`;
 
-    // Card 2: Market Pulse
-    const fngColor = fng.value > 60 ? 'var(--green)' : fng.value < 40 ? 'var(--red)' : 'var(--yellow)';
-    const sentColor = market.market_sentiment === 'bullish' ? 'var(--green)' : market.market_sentiment === 'bearish' ? 'var(--red)' : 'var(--yellow)';
+    // Card 2: Market Pulse (from Binance + F&G external API)
+    const fngVal = parseInt(fng.value) || 0;
+    const fngColor = fngVal > 60 ? 'var(--green)' : fngVal < 40 ? 'var(--red)' : 'var(--yellow)';
+    const mSent = market.market_sentiment || 'neutral';
+    const sentColor = mSent === 'bullish' ? 'var(--green)' : mSent === 'bearish' ? 'var(--red)' : 'var(--yellow)';
     h += `<div class="dash-card">
         <div class="dash-card-title">Market Pulse</div>
         <div class="dash-card-body">
-            <div class="dash-stat"><span class="dash-stat-label">Fear & Greed</span><span class="dash-stat-value" style="color:${fngColor}">${fng.value || '--'} (${fng.classification || '--'})</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">Market</span><span class="dash-stat-value" style="color:${sentColor}">${(market.market_sentiment || '--').toUpperCase()}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Fear & Greed</span><span class="dash-stat-value" style="color:${fngColor}">${fngVal || '--'} (${fng.classification || '--'})</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Market</span><span class="dash-stat-value" style="color:${sentColor}">${mSent.toUpperCase()}</span></div>
             <div class="dash-stat"><span class="dash-stat-label">Gainers / Losers</span><span class="dash-stat-value"><span style="color:var(--green)">${market.gainers || 0}</span> / <span style="color:var(--red)">${market.losers || 0}</span></span></div>
             <div class="dash-stat"><span class="dash-stat-label">Avg Change</span><span class="dash-stat-value" style="color:${(market.avg_change_pct||0) >= 0 ? 'var(--green)' : 'var(--red)'}">${(market.avg_change_pct||0) >= 0 ? '+' : ''}${(market.avg_change_pct||0).toFixed(2)}%</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">BTC Vol Dominance</span><span class="dash-stat-value">${market.btc_volume_dominance || 0}%</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">BTC Vol Dom</span><span class="dash-stat-value">${market.btc_volume_dominance || 0}%</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Total Pairs</span><span class="dash-stat-value">${market.total_pairs || 0}</span></div>
         </div>
     </div>`;
 
-    // Card 3: Active Signal
+    // Card 3: Platform Status
+    h += `<div class="dash-card">
+        <div class="dash-card-title">Platform <span style="color:var(--green);font-size:8px">v${health.version || '5.1'}</span></div>
+        <div class="dash-card-body">
+            <div class="dash-stat"><span class="dash-stat-label">ML Features</span><span class="dash-stat-value">${health.ml_features || 0}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Dimensions</span><span class="dash-stat-value">${health.ml_dimensions || 0}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">API Routes</span><span class="dash-stat-value">${health.api_routes || 0}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Cached Signals</span><span class="dash-stat-value">${health.cached_signals || 0}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Watchlist</span><span class="dash-stat-value">${health.watchlist_size || 0} coins</span></div>
+        </div>
+    </div>`;
+
+    // Card 4: Active Signal
     const ad = dash.active_coin || {};
+    const hasSignal = ad.price && ad.price > 0;
     const dirColor = (ad.direction||'').includes('BUY') ? 'var(--green)' : (ad.direction||'').includes('SELL') ? 'var(--red)' : 'var(--yellow)';
     h += `<div class="dash-card">
-        <div class="dash-card-title">Active Signal <span style="font-size:9px;color:var(--text-muted)">${ad.symbol || '--'}</span></div>
+        <div class="dash-card-title">${ad.symbol || 'BTC/USDT'} Signal</div>
         <div class="dash-card-body">
-            <div style="text-align:center;padding:8px 0">
-                <div style="font-size:20px;font-weight:900;color:${dirColor}">${ad.direction || '--'}</div>
+            ${hasSignal ? `<div style="text-align:center;padding:8px 0">
+                <div style="font-size:20px;font-weight:900;color:${dirColor}">${ad.direction}</div>
                 <div style="font-size:12px;color:var(--text-dim)">Confidence: ${(ad.confidence||0).toFixed(0)}%</div>
-                <div style="font-size:14px;font-weight:700;margin-top:4px">$${fmtP(ad.price || 0)}</div>
-            </div>
+                <div style="font-size:14px;font-weight:700;margin-top:4px">$${fmtP(ad.price)}</div>
+                <button class="btn btn-sm" style="margin-top:6px" onclick="selectCoin('${ad.symbol}');switchMode('single')">Details</button>
+            </div>` : `<div style="text-align:center;padding:12px 0;color:var(--text-muted)">
+                <div style="margin-bottom:8px">No signal computed yet</div>
+                <button class="btn btn-primary btn-sm" onclick="dashboardComputeSignal()">Compute BTC Signal</button>
+            </div>`}
         </div>
     </div>`;
 
-    // Card 4: Best Opportunity
-    const best = dash.best_opportunity;
+    // Card 5: Top Gainers & Losers
     h += `<div class="dash-card">
-        <div class="dash-card-title">Best Opportunity</div>
-        <div class="dash-card-body">
-            ${best ? `<div style="text-align:center;padding:8px 0">
-                <div style="font-size:14px;font-weight:700">${best.symbol?.replace('USDT','/USDT') || '--'}</div>
-                <div style="font-size:16px;font-weight:900;color:${(best.direction||'').includes('BUY')?'var(--green)':'var(--red)'}">${best.direction || '--'}</div>
-                <div style="font-size:11px;color:var(--text-dim)">Confidence: ${(best.confidence||0).toFixed(0)}%</div>
-                <button class="btn btn-sm btn-primary" style="margin-top:6px" onclick="selectCoin('${best.symbol}');switchMode('single')">Analyze</button>
-            </div>` : '<div style="text-align:center;color:var(--text-muted);padding:8px">Refresh signals first</div>'}
-        </div>
-    </div>`;
-
-    // Card 5: Signal Performance (full width)
-    const sig = perf.signals || {};
-    const accColor = sig.accuracy > 55 ? 'var(--green)' : sig.accuracy > 45 ? 'var(--yellow)' : 'var(--red)';
-    h += `<div class="dash-card full-width">
-        <div class="dash-card-title">Signal Performance</div>
-        <div class="dash-card-body" style="display:flex;gap:16px;flex-wrap:wrap">
-            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
-                <span class="dash-stat-label">Accuracy</span><span class="dash-stat-value" style="font-size:18px;color:${accColor}">${sig.accuracy || 0}%</span>
-            </div>
-            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
-                <span class="dash-stat-label">Total Signals</span><span class="dash-stat-value" style="font-size:18px">${sig.total_signals || 0}</span>
-            </div>
-            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
-                <span class="dash-stat-label">Correct</span><span class="dash-stat-value" style="font-size:18px;color:var(--green)">${sig.correct || 0}</span>
-            </div>
-            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
-                <span class="dash-stat-label">Wrong</span><span class="dash-stat-value" style="font-size:18px;color:var(--red)">${sig.wrong || 0}</span>
-            </div>
-            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
-                <span class="dash-stat-label">Pending</span><span class="dash-stat-value" style="font-size:18px">${sig.pending || 0}</span>
-            </div>
-        </div>
-    </div>`;
-
-    // Card 6: Watchlist Breadth
-    h += `<div class="dash-card">
-        <div class="dash-card-title">Watchlist Breadth</div>
-        <div class="dash-card-body">
-            <div class="dash-stat"><span class="dash-stat-label">Coins</span><span class="dash-stat-value">${breadth.total || 0}</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">Bullish</span><span class="dash-stat-value" style="color:var(--green)">${breadth.bullish || 0} (${breadth.bullish_pct || 0}%)</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">Bearish</span><span class="dash-stat-value" style="color:var(--red)">${breadth.bearish || 0} (${breadth.bearish_pct || 0}%)</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">Avg RSI</span><span class="dash-stat-value">${breadth.avg_rsi || 0}</span></div>
-            <div class="dash-stat"><span class="dash-stat-label">Sentiment</span><span class="dash-stat-value" style="color:${breadth.sentiment === 'bullish' ? 'var(--green)' : breadth.sentiment === 'bearish' ? 'var(--red)' : 'var(--yellow)'}">${(breadth.sentiment || 'neutral').toUpperCase()}</span></div>
-        </div>
-    </div>`;
-
-    // Card 7: Top Movers
-    h += `<div class="dash-card">
-        <div class="dash-card-title">Top Movers</div>
-        <div class="dash-card-body">
-            <ul class="dash-mini-list">`;
-    (market.top_gainers || []).slice(0, 3).forEach(c => {
-        h += `<li><span style="cursor:pointer" onclick="selectCoin('${c.symbol}');switchMode('single')">${c.baseAsset}</span><span style="color:var(--green);font-weight:700">+${c.change}%</span></li>`;
-    });
-    (market.top_losers || []).slice(0, 3).forEach(c => {
-        h += `<li><span style="cursor:pointer" onclick="selectCoin('${c.symbol}');switchMode('single')">${c.baseAsset}</span><span style="color:var(--red);font-weight:700">${c.change}%</span></li>`;
+        <div class="dash-card-title">Top Gainers</div>
+        <div class="dash-card-body"><ul class="dash-mini-list">`;
+    (market.top_gainers || []).slice(0, 5).forEach(c => {
+        h += `<li><span style="cursor:pointer;font-weight:600" onclick="selectCoin('${c.symbol}');switchMode('single')">${c.baseAsset}</span><span style="color:var(--green);font-weight:700">+${c.change}%</span></li>`;
     });
     h += `</ul></div></div>`;
+
+    h += `<div class="dash-card">
+        <div class="dash-card-title">Top Losers</div>
+        <div class="dash-card-body"><ul class="dash-mini-list">`;
+    (market.top_losers || []).slice(0, 5).forEach(c => {
+        h += `<li><span style="cursor:pointer;font-weight:600" onclick="selectCoin('${c.symbol}');switchMode('single')">${c.baseAsset}</span><span style="color:var(--red);font-weight:700">${c.change}%</span></li>`;
+    });
+    h += `</ul></div></div>`;
+
+    // Card 6: Signal Performance (only show if data exists)
+    const sig = perf.signals || {};
+    if (sig.total_signals > 0) {
+        const accColor = sig.accuracy > 55 ? 'var(--green)' : sig.accuracy > 45 ? 'var(--yellow)' : 'var(--red)';
+        h += `<div class="dash-card full-width">
+            <div class="dash-card-title">Signal Performance</div>
+            <div class="dash-card-body" style="display:flex;gap:16px;flex-wrap:wrap">
+                <div class="dash-stat" style="flex:1;min-width:70px;flex-direction:column;text-align:center;border:none">
+                    <span class="dash-stat-label">Accuracy</span><span class="dash-stat-value" style="font-size:18px;color:${accColor}">${sig.accuracy}%</span>
+                </div>
+                <div class="dash-stat" style="flex:1;min-width:70px;flex-direction:column;text-align:center;border:none">
+                    <span class="dash-stat-label">Total</span><span class="dash-stat-value" style="font-size:18px">${sig.total_signals}</span>
+                </div>
+                <div class="dash-stat" style="flex:1;min-width:70px;flex-direction:column;text-align:center;border:none">
+                    <span class="dash-stat-label">Correct</span><span class="dash-stat-value" style="font-size:18px;color:var(--green)">${sig.correct}</span>
+                </div>
+                <div class="dash-stat" style="flex:1;min-width:70px;flex-direction:column;text-align:center;border:none">
+                    <span class="dash-stat-label">Wrong</span><span class="dash-stat-value" style="font-size:18px;color:var(--red)">${sig.wrong}</span>
+                </div>
+                <div class="dash-stat" style="flex:1;min-width:70px;flex-direction:column;text-align:center;border:none">
+                    <span class="dash-stat-label">Pending</span><span class="dash-stat-value" style="font-size:18px">${sig.pending}</span>
+                </div>
+            </div>
+        </div>`;
+    }
 
     grid.innerHTML = h;
     } catch(e) {
@@ -1587,6 +1592,32 @@ async function loadDashboard() {
             <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="loadDashboard()">Retry</button>
         </div>`;
     }
+}
+
+// ── Dashboard Actions ──
+async function dashboardComputeSignal() {
+    toast('Computing BTC signal (may take 30-60s for first train)...', 'info');
+    try {
+        const r = await fetch(`/api/coin/BTCUSDT/signal`);
+        const j = await r.json();
+        if (j.ok) { toast('BTC signal ready!', 'success'); loadDashboard(); }
+        else toast(j.error || 'Failed', 'error');
+    } catch(e) { toast('Signal computation failed', 'error'); }
+}
+
+async function dashboardRefreshSignals() {
+    toast('Computing signals for watchlist (this takes a while)...', 'info');
+    const wl = watchlist.length ? watchlist : ['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT'];
+    let done = 0;
+    for (const sym of wl) {
+        try {
+            await fetch(`/api/coin/${sym}/signal`);
+            done++;
+            toast(`${done}/${wl.length} signals computed`, 'info');
+        } catch(e) {}
+    }
+    toast(`All ${done} signals ready!`, 'success');
+    loadDashboard();
 }
 
 // ── Init ──
