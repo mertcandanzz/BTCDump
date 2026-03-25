@@ -217,6 +217,54 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Signal Leaderboard ────────────────────────────────
+
+    @app.get("/api/leaderboard")
+    async def get_leaderboard():
+        """Rank all cached coins by composite signal quality score."""
+        cache = state.coin_manager.signal_cache
+        if not cache:
+            return {"ok": True, "coins": []}
+
+        scored = []
+        for symbol, data in cache.items():
+            if data.get("status") != "ready" or "error" in data:
+                continue
+
+            direction = data.get("direction", "HOLD")
+            confidence = data.get("confidence", 0)
+            rr = data.get("risk_reward", 0)
+            agreement = data.get("model_agreement", 0) * 100
+            confluence = data.get("indicator_confluence", 0)
+            volume_ratio = data.get("volume_ratio", 1)
+
+            # Composite score: weighted sum of quality signals
+            dir_mult = 1.0 if "STRONG" in direction else 0.7 if direction != "HOLD" else 0.3
+            score = (
+                confidence * 0.30 +        # ML confidence
+                agreement * 0.20 +          # Model agreement
+                confluence * 10 * 0.15 +    # Indicator alignment (0-5 scaled to 0-50)
+                min(rr, 5) * 10 * 0.15 +    # Risk/Reward (capped at 5)
+                min(volume_ratio, 3) * 15 * 0.10 +  # Volume confirmation
+                dir_mult * 30 * 0.10        # Direction strength bonus
+            )
+
+            scored.append({
+                "symbol": symbol,
+                "baseAsset": symbol.replace("USDT", ""),
+                "direction": direction,
+                "confidence": round(confidence, 1),
+                "risk_reward": round(rr, 2),
+                "model_agreement": round(agreement, 1),
+                "volume_ratio": round(volume_ratio, 2),
+                "score": round(score, 1),
+                "change_pct": round(data.get("change_pct", 0), 2),
+                "rsi": data.get("rsi", 0),
+            })
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return {"ok": True, "coins": scored[:20]}
+
     # ── Fibonacci Retracement ──────────────────────────────
 
     @app.get("/api/coin/{symbol}/fibonacci")

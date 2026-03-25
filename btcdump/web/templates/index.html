@@ -308,6 +308,7 @@
                         <button class="filter-pill active" onclick="switchCompareTab('grid')">Grid</button>
                         <button class="filter-pill" onclick="switchCompareTab('correlation')">Correlation</button>
                         <button class="filter-pill" onclick="switchCompareTab('scanner')">Scanner</button>
+                        <button class="filter-pill" onclick="switchCompareTab('leaderboard')">Leaderboard</button>
                     </div>
                     <div class="compare-filters">
                         <button class="filter-pill active" onclick="setSignalFilter('all')">All</button>
@@ -344,6 +345,13 @@
                         <span id="scannerStatus" class="panel-hint"></span>
                     </div>
                     <div id="scannerResults" style="flex:1;overflow:auto;font-size:11px;padding:4px"></div>
+                </div>
+                <div id="compareLeaderboardContent" style="display:none">
+                    <div style="padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)">
+                        <button class="btn btn-primary btn-sm" onclick="loadLeaderboard()">Load Leaderboard</button>
+                        <span class="panel-hint">Ranks coins by composite signal quality score</span>
+                    </div>
+                    <div id="leaderboardResults" style="overflow:auto;font-size:11px"></div>
                 </div>
             </div>
         </section>

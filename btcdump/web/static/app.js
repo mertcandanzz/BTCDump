@@ -761,7 +761,43 @@ function switchCompareTab(tab) {
     document.getElementById('compareGridContent').style.display = tab === 'grid' ? '' : 'none';
     document.getElementById('compareCorrelationContent').style.display = tab === 'correlation' ? '' : 'none';
     document.getElementById('compareScannerContent').style.display = tab === 'scanner' ? '' : 'none';
+    document.getElementById('compareLeaderboardContent').style.display = tab === 'leaderboard' ? '' : 'none';
     if (tab === 'correlation') loadCorrelation();
+    if (tab === 'leaderboard') loadLeaderboard();
+}
+
+// ── Signal Leaderboard ──
+async function loadLeaderboard() {
+    const el = document.getElementById('leaderboardResults');
+    try {
+        const r = await fetch('/api/leaderboard');
+        const j = await r.json();
+        if (!j.ok) return;
+        if (!j.coins.length) {
+            el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">No signals computed yet. Refresh watchlist first.</div>';
+            return;
+        }
+        let h = '<table class="comparison-table"><thead><tr><th>#</th><th>Coin</th><th>Signal</th><th>Score</th><th>Conf</th><th>R/R</th><th>Agreement</th><th>RSI</th><th>AI%</th><th>Vol</th><th></th></tr></thead><tbody>';
+        j.coins.forEach((c, i) => {
+            const sc = sigCls(c.direction);
+            const scoreColor = c.score >= 60 ? 'var(--green)' : c.score >= 40 ? 'var(--yellow)' : 'var(--red)';
+            h += `<tr>
+                <td style="color:${scoreColor};font-weight:800">${i + 1}</td>
+                <td><strong>${c.baseAsset}</strong></td>
+                <td><span class="signal-badge ${sc}">${c.direction}</span></td>
+                <td style="color:${scoreColor};font-weight:700">${c.score}</td>
+                <td>${c.confidence.toFixed(0)}%</td>
+                <td>${c.risk_reward.toFixed(1)}</td>
+                <td>${c.model_agreement.toFixed(0)}%</td>
+                <td style="color:${rsiCol(c.rsi)}">${c.rsi}</td>
+                <td class="change-cell ${c.change_pct >= 0 ? 'up' : 'down'}">${c.change_pct >= 0 ? '+' : ''}${c.change_pct.toFixed(2)}%</td>
+                <td>${c.volume_ratio}x</td>
+                <td><button class="btn btn-sm btn-primary" onclick="selectCoin('${c.symbol}');switchMode('single')">Go</button></td>
+            </tr>`;
+        });
+        h += '</tbody></table>';
+        el.innerHTML = h;
+    } catch(e) { toast('Leaderboard failed', 'error'); }
 }
 
 // ── Market Scanner ──
