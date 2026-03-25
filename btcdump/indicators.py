@@ -51,6 +51,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _seasonality_features(df)
     df = _cycle_features(df)
     df = _information_theory_features(df)
+    df = _complexity_features(df)
     return df.copy()  # final defragment
 
 
@@ -1273,6 +1274,68 @@ def _information_theory_features(df: pd.DataFrame) -> pd.DataFrame:
 
     df["transfer_entropy"] = te_vals
     df["mutual_info_pv"] = mi_vals
+
+    return df
+
+
+def _complexity_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Approximate Entropy (ApEn) and Sample Entropy - measure time series complexity.
+
+    ApEn measures the regularity/predictability of a time series.
+    Low ApEn = regular/predictable, High ApEn = irregular/random.
+    Better than Shannon entropy for short, noisy financial data.
+    """
+    ret = df["close"].pct_change().fillna(0).values
+
+    window = 50
+    m = 2       # embedding dimension
+    r_mult = 0.2  # tolerance as fraction of std
+
+    apen_vals = np.zeros(len(df))
+
+    for i in range(window, len(df)):
+        chunk = ret[i - window:i]
+        std = np.std(chunk)
+        if std == 0:
+            continue
+        r = r_mult * std
+        n = len(chunk)
+
+        # Count matches for template length m and m+1
+        def _count_matches(seq, template_len, tolerance):
+            count = 0
+            templates = n - template_len
+            if templates <= 0:
+                return 0
+            for a in range(templates):
+                for b in range(a + 1, templates):
+                    match = True
+                    for k in range(template_len):
+                        if abs(seq[a + k] - seq[b + k]) > tolerance:
+                            match = False
+                            break
+                    if match:
+                        count += 1
+            return count / templates
+
+        c_m = _count_matches(chunk, m, r)
+        c_m1 = _count_matches(chunk, m + 1, r)
+
+        if c_m > 0 and c_m1 > 0:
+            apen_vals[i] = np.log(c_m / c_m1)
+        elif c_m > 0:
+            apen_vals[i] = np.log(c_m)
+
+    df["approx_entropy"] = apen_vals
+
+    # Simplified Sample Entropy (ratio variant - faster)
+    # SampEn ≈ -ln(A/B) where A=matches at m+1, B=matches at m
+    # We use rolling std ratio as a fast proxy
+    ret_series = df["close"].pct_change()
+    short_std = ret_series.rolling(10).std()
+    long_std = ret_series.rolling(50, min_periods=10).std().replace(0, np.nan)
+    # High ratio = short-term vol diverging from long-term = less predictable
+    df["sample_entropy_proxy"] = (short_std / long_std).fillna(1.0)
 
     return df
 

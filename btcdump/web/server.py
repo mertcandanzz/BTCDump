@@ -196,7 +196,7 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
     FEATURE_DESC = {
         "close":"Closing price","volume":"Trading volume","RSI":"Relative Strength Index (14)","MACD":"MACD line (12-26 EMA)","volume_ratio":"Volume / 20-period avg","ma5":"5-period SMA","ma20":"20-period SMA","ma50":"50-period SMA","BB_upper":"Upper Bollinger Band","BB_lower":"Lower Bollinger Band","ATR":"Average True Range (14)","stoch_k":"Stochastic %K (14)","stoch_d":"Stochastic %D (3)","ADX":"Avg Directional Index (14)","OBV_norm":"On-Balance Volume z-score","ROC":"Rate of Change (10)","williams_r":"Williams %R (14)","CCI":"Commodity Channel Index (20)","MFI":"Money Flow Index (14)","returns_1":"1-candle return","returns_5":"5-candle return","price_momentum":"10-bar price momentum","volatility_10":"10-period return volatility","high_low_range":"Candle range % of price","parkinson_vol":"Parkinson volatility","atr_ratio":"ATR expansion ratio","body_ratio":"Candle body ratio (0=doji,1=full)","buying_pressure":"Close position in range","upper_shadow":"Upper wick ratio","lower_shadow":"Lower wick ratio","bb_pct_b":"Bollinger %B position","bb_width":"BB width (squeeze)","vol_delta":"Volume delta (buy/sell)","ad_norm":"Accumulation/Distribution","hh_streak":"Higher highs streak","ll_streak":"Lower lows streak","dist_from_high":"Distance from 20-bar high","dist_from_low":"Distance from 20-bar low","rsi_momentum":"RSI acceleration","macd_hist_slope":"MACD histogram slope","close_ma_ratio":"Price vs MA20 ratio","price_zscore":"Price z-score","vwap_dist":"VWAP distance in ATR",
         # v5.0 Pro Features
-        "efficiency_ratio":"Kaufman ER - trend efficiency (0=chop,1=clean trend)","choppiness":"Choppiness Index (>61.8=chop,<38.2=trend)","adx_slope":"ADX 5-bar change (trend strengthening/weakening)","tsi":"True Strength Index (double-smoothed momentum)","rsi_divergence":"Price-RSI divergence (positive=bullish div)","returns_10":"10-candle return","returns_20":"20-candle return","momentum_quality":"Directional Sharpe (return/volatility)","garch_proxy":"GARCH proxy (short/long vol ratio, >1=expanding)","vol_of_vol":"Volatility of volatility (regime transition signal)","yang_zhang_vol":"Yang-Zhang vol (state-of-art OHLCV estimator)","volume_trend":"Volume slope (rising=accumulation)","amihud_illiq":"Amihud illiquidity (higher=less liquid)","hour_sin":"Hour sine (cyclical time feature)","hour_cos":"Hour cosine (cyclical time feature)","dow_sin":"Day-of-week sine (weekend/weekday cycle)","dow_cos":"Day-of-week cosine","skewness_20":"Return skewness (neg=left tail risk)","kurtosis_20":"Return kurtosis (high=extreme moves likely)","keltner_position":"Keltner Channel position (ATR-based bands)","squeeze_ratio":"BB/Keltner squeeze (<1=squeeze,breakout imminent)","engulfing_score":"Engulfing pattern strength (pos=bullish)","consecutive_dir":"Consecutive candle direction streak","ofi_14":"Order Flow Imbalance 14-bar (buy vs sell pressure proxy)","pv_divergence":"Price-Volume divergence (high=thin move, low=confirmed)","ichimoku_tk":"Ichimoku Tenkan-Kijun cross (% of price, pos=bullish)","ichimoku_cloud_pos":"Price position vs Ichimoku cloud (>0=above)","ichimoku_cloud_width":"Ichimoku cloud thickness (% of price, thin=weak S/R)","ichimoku_chikou":"Chikou span: price vs 26 bars ago (% change)","ichimoku_kijun_dist":"Distance from Kijun-sen baseline (mean-reversion)","vp_poc_dist":"Distance from Volume POC (Point of Control, %)","vp_va_position":"Position within Value Area (0=low, 1=high, >1=above)","pivot_dist":"Distance from pivot point (% of price)","pivot_r1_dist":"Distance to R1 resistance (%)","pivot_s1_dist":"Distance to S1 support (%)","pivot_position":"Position within S2-R2 range (0=S2, 1=R2)","pattern_doji":"Doji strength (1=perfect doji, indecision)","pattern_hammer":"Hammer/HangingMan strength (bullish reversal)","pattern_shooting_star":"Shooting Star strength (bearish reversal)","pattern_three_soldiers":"Three White Soldiers (strong bull continuation)","pattern_three_crows":"Three Black Crows (strong bear continuation)","pattern_morning_star":"Morning Star (bullish reversal, 3-candle)","pattern_evening_star":"Evening Star (bearish reversal, 3-candle)","trade_intensity":"Volume per unit price move z-score (high=absorption)","pin_bar_score":"Pin bar strength (pos=bullish, neg=bearish reversal)","gap_pct":"Gap % from prev close to open (crypto overnight gaps)","intrabar_vol_ratio":"Total range / body size (high=choppy intrabar)","close_position_avg":"5-bar avg close position in range (persistent pressure)","whale_score":"Whale activity score (high vol + small body = absorption)","smart_money_div":"Smart money divergence (1=bullish, -1=bearish accumulation/distribution)","price_entropy":"Shannon entropy of returns (high=uncertain/random, low=predictable)","kama_dist":"KAMA distance (Kaufman Adaptive MA, adapts to regime)","dema_dist":"DEMA distance (Double EMA, faster trend response)","tema_dist":"TEMA distance (Triple EMA, minimal lag)","kama_slope":"KAMA 3-bar slope (adaptive trend direction)","seasonal_hour_bias":"Hour-of-day seasonal return bias (z-score)","seasonal_dow_bias":"Day-of-week seasonal return bias (z-score)","cycle_phase":"FFT dominant cycle phase (-1 to +1, sine)","cycle_strength":"FFT cycle strength (0=random, 1=perfect cycle)","dominant_period":"FFT dominant cycle period (bars)","transfer_entropy":"Transfer entropy vol→price (info flow, higher=volume predicts price)","mutual_info_pv":"Mutual information price-volume (shared information content)","hurst_exponent":"Hurst exponent (>0.5=trending, <0.5=mean-reverting, 0.5=random)","autocorr_1":"Return auto-correlation lag-1 (pos=momentum, neg=reversal)","autocorr_5":"Return auto-correlation lag-5 (weekly pattern on 1h data)","di_ratio":"DI+/DI- ratio (>1=bullish dominance, <1=bearish)","di_spread":"DI+/DI- normalized spread (-1 to +1)","variance_ratio":"Lo-MacKinlay variance ratio (>1=trending, <1=mean-reverting)",
+        "efficiency_ratio":"Kaufman ER - trend efficiency (0=chop,1=clean trend)","choppiness":"Choppiness Index (>61.8=chop,<38.2=trend)","adx_slope":"ADX 5-bar change (trend strengthening/weakening)","tsi":"True Strength Index (double-smoothed momentum)","rsi_divergence":"Price-RSI divergence (positive=bullish div)","returns_10":"10-candle return","returns_20":"20-candle return","momentum_quality":"Directional Sharpe (return/volatility)","garch_proxy":"GARCH proxy (short/long vol ratio, >1=expanding)","vol_of_vol":"Volatility of volatility (regime transition signal)","yang_zhang_vol":"Yang-Zhang vol (state-of-art OHLCV estimator)","volume_trend":"Volume slope (rising=accumulation)","amihud_illiq":"Amihud illiquidity (higher=less liquid)","hour_sin":"Hour sine (cyclical time feature)","hour_cos":"Hour cosine (cyclical time feature)","dow_sin":"Day-of-week sine (weekend/weekday cycle)","dow_cos":"Day-of-week cosine","skewness_20":"Return skewness (neg=left tail risk)","kurtosis_20":"Return kurtosis (high=extreme moves likely)","keltner_position":"Keltner Channel position (ATR-based bands)","squeeze_ratio":"BB/Keltner squeeze (<1=squeeze,breakout imminent)","engulfing_score":"Engulfing pattern strength (pos=bullish)","consecutive_dir":"Consecutive candle direction streak","ofi_14":"Order Flow Imbalance 14-bar (buy vs sell pressure proxy)","pv_divergence":"Price-Volume divergence (high=thin move, low=confirmed)","ichimoku_tk":"Ichimoku Tenkan-Kijun cross (% of price, pos=bullish)","ichimoku_cloud_pos":"Price position vs Ichimoku cloud (>0=above)","ichimoku_cloud_width":"Ichimoku cloud thickness (% of price, thin=weak S/R)","ichimoku_chikou":"Chikou span: price vs 26 bars ago (% change)","ichimoku_kijun_dist":"Distance from Kijun-sen baseline (mean-reversion)","vp_poc_dist":"Distance from Volume POC (Point of Control, %)","vp_va_position":"Position within Value Area (0=low, 1=high, >1=above)","pivot_dist":"Distance from pivot point (% of price)","pivot_r1_dist":"Distance to R1 resistance (%)","pivot_s1_dist":"Distance to S1 support (%)","pivot_position":"Position within S2-R2 range (0=S2, 1=R2)","pattern_doji":"Doji strength (1=perfect doji, indecision)","pattern_hammer":"Hammer/HangingMan strength (bullish reversal)","pattern_shooting_star":"Shooting Star strength (bearish reversal)","pattern_three_soldiers":"Three White Soldiers (strong bull continuation)","pattern_three_crows":"Three Black Crows (strong bear continuation)","pattern_morning_star":"Morning Star (bullish reversal, 3-candle)","pattern_evening_star":"Evening Star (bearish reversal, 3-candle)","trade_intensity":"Volume per unit price move z-score (high=absorption)","pin_bar_score":"Pin bar strength (pos=bullish, neg=bearish reversal)","gap_pct":"Gap % from prev close to open (crypto overnight gaps)","intrabar_vol_ratio":"Total range / body size (high=choppy intrabar)","close_position_avg":"5-bar avg close position in range (persistent pressure)","whale_score":"Whale activity score (high vol + small body = absorption)","smart_money_div":"Smart money divergence (1=bullish, -1=bearish accumulation/distribution)","price_entropy":"Shannon entropy of returns (high=uncertain/random, low=predictable)","kama_dist":"KAMA distance (Kaufman Adaptive MA, adapts to regime)","dema_dist":"DEMA distance (Double EMA, faster trend response)","tema_dist":"TEMA distance (Triple EMA, minimal lag)","kama_slope":"KAMA 3-bar slope (adaptive trend direction)","seasonal_hour_bias":"Hour-of-day seasonal return bias (z-score)","seasonal_dow_bias":"Day-of-week seasonal return bias (z-score)","cycle_phase":"FFT dominant cycle phase (-1 to +1, sine)","cycle_strength":"FFT cycle strength (0=random, 1=perfect cycle)","dominant_period":"FFT dominant cycle period (bars)","transfer_entropy":"Transfer entropy vol→price (info flow, higher=volume predicts price)","mutual_info_pv":"Mutual information price-volume (shared information content)","approx_entropy":"Approximate Entropy (low=regular/predictable, high=random)","sample_entropy_proxy":"Sample Entropy proxy (short/long vol ratio, >1=unpredictable)","hurst_exponent":"Hurst exponent (>0.5=trending, <0.5=mean-reverting, 0.5=random)","autocorr_1":"Return auto-correlation lag-1 (pos=momentum, neg=reversal)","autocorr_5":"Return auto-correlation lag-5 (weekly pattern on 1h data)","di_ratio":"DI+/DI- ratio (>1=bullish dominance, <1=bearish)","di_spread":"DI+/DI- normalized spread (-1 to +1)","variance_ratio":"Lo-MacKinlay variance ratio (>1=trending, <1=mean-reverting)",
     }
 
     @app.get("/api/feature-importance")
@@ -1099,6 +1099,189 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
                 }
 
             result = await asyncio.to_thread(_compute)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Batch Multi-Coin Backtest ───────────────────────────
+
+    @app.get("/api/batch-backtest")
+    async def batch_backtest():
+        """Run quick backtest across all watchlist coins and rank results."""
+        try:
+            def _run():
+                results = []
+                interval = state.coin_manager.active_interval
+
+                for symbol in state.coin_manager.watchlist:
+                    try:
+                        data = state.coin_manager.fetcher.fetch_with_cache(symbol, interval)
+                        enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+                        df = enriched.tail(200)
+                        if len(df) < 50:
+                            continue
+
+                        # Quick strategy test: EMA crossover
+                        c = df["close"].values
+                        ema9 = pd.Series(c).ewm(span=9).mean().values
+                        ema21 = pd.Series(c).ewm(span=21).mean().values
+
+                        trades = 0
+                        wins = 0
+                        total_ret = 0
+                        position = 0
+                        entry = 0
+
+                        for i in range(22, len(c)):
+                            if ema9[i] > ema21[i] and ema9[i-1] <= ema21[i-1] and position == 0:
+                                position = 1
+                                entry = c[i]
+                            elif ema9[i] < ema21[i] and position == 1:
+                                ret = (c[i] - entry) / entry * 100 - 0.2  # fee
+                                total_ret += ret
+                                trades += 1
+                                if ret > 0:
+                                    wins += 1
+                                position = 0
+
+                        if position == 1:
+                            ret = (c[-1] - entry) / entry * 100 - 0.2
+                            total_ret += ret
+                            trades += 1
+                            if ret > 0:
+                                wins += 1
+
+                        results.append({
+                            "symbol": symbol,
+                            "baseAsset": symbol.replace("USDT", ""),
+                            "total_return": round(total_ret, 2),
+                            "trades": trades,
+                            "win_rate": round(wins / trades * 100, 1) if trades > 0 else 0,
+                            "avg_per_trade": round(total_ret / trades, 2) if trades > 0 else 0,
+                        })
+                    except Exception:
+                        continue
+
+                results.sort(key=lambda x: x["total_return"], reverse=True)
+                return results
+
+            result = await asyncio.to_thread(_run)
+            return {"ok": True, "coins": result, "strategy": "EMA 9/21 Crossover", "period": "200 candles"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Portfolio Rebalancing ────────────────────────────
+
+    @app.get("/api/rebalance")
+    async def portfolio_rebalance():
+        """Suggest portfolio rebalancing based on momentum and risk."""
+        try:
+            positions = state.paper_trader.positions
+            if not positions:
+                return {"ok": False, "error": "No open positions to rebalance"}
+
+            tickers = {t["symbol"]: t["lastPrice"] for t in state.coin_manager.fetcher.fetch_tickers()}
+            portfolio = state.paper_trader.get_portfolio(tickers)
+            total_value = portfolio.get("total_value", 10000)
+
+            suggestions = []
+            for pos_data in portfolio.get("positions", []):
+                sym = pos_data["symbol"]
+                current_alloc = (pos_data["entry_price"] * pos_data.get("quantity", 0)) / total_value * 100 if total_value > 0 else 0
+                pnl_pct = pos_data.get("pnl_pct", 0)
+
+                # Check if position has drifted significantly
+                cached = state.coin_manager.signal_cache.get(sym, {})
+                direction = cached.get("direction", "HOLD")
+                confidence = cached.get("confidence", 50)
+
+                action = "hold"
+                reason = ""
+                if pnl_pct > 15 and "SELL" in direction:
+                    action = "take_profit"
+                    reason = f"P&L at +{pnl_pct:.1f}% and signal turned {direction}"
+                elif pnl_pct < -10:
+                    action = "reduce"
+                    reason = f"P&L at {pnl_pct:.1f}%, consider cutting losses"
+                elif current_alloc > 30:
+                    action = "reduce"
+                    reason = f"Over-concentrated at {current_alloc:.0f}% of portfolio"
+                elif "STRONG" in direction and confidence > 70 and current_alloc < 10:
+                    action = "add"
+                    reason = f"Strong signal ({direction} {confidence:.0f}%) but only {current_alloc:.0f}% allocated"
+
+                suggestions.append({
+                    "symbol": sym,
+                    "current_alloc_pct": round(current_alloc, 1),
+                    "pnl_pct": round(pnl_pct, 1),
+                    "signal": direction,
+                    "action": action,
+                    "reason": reason,
+                })
+
+            return {
+                "ok": True,
+                "suggestions": suggestions,
+                "total_value": round(total_value, 2),
+                "position_count": len(positions),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Execution Cost Estimator ─────────────────────────
+
+    @app.get("/api/coin/{symbol}/execution-cost")
+    async def execution_cost(symbol: str, trade_size_usd: float = 1000):
+        """Estimate execution cost (slippage + fees) for a trade."""
+        try:
+            def _estimate():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+                row = enriched.iloc[-1]
+
+                price = float(data.df["close"].iloc[-1])
+                volume_24h = float(data.df["volume"].tail(24).sum()) * price  # approximate $ volume
+                atr = float(row.get("ATR", price * 0.01))
+
+                # Binance fee
+                fee_pct = 0.1  # 0.1% per side
+                fee_usd = trade_size_usd * fee_pct / 100
+
+                # Estimated slippage (based on trade size vs daily volume)
+                if volume_24h > 0:
+                    market_impact = (trade_size_usd / volume_24h) * 100  # as % of daily vol
+                    slippage_pct = market_impact * 10  # rough: 10x market impact
+                    slippage_pct = min(slippage_pct, 1.0)  # cap at 1%
+                else:
+                    slippage_pct = 0.5
+
+                slippage_usd = trade_size_usd * slippage_pct / 100
+
+                # Spread estimate (from ATR)
+                spread_pct = atr / price * 5  # rough: spread ≈ ATR/20
+                spread_usd = trade_size_usd * min(spread_pct, 0.5) / 100
+
+                total_cost = fee_usd * 2 + slippage_usd + spread_usd  # round trip fee
+                total_pct = total_cost / trade_size_usd * 100
+
+                return {
+                    "trade_size_usd": trade_size_usd,
+                    "price": round(price, 6),
+                    "fee_per_side_pct": fee_pct,
+                    "fee_round_trip_usd": round(fee_usd * 2, 2),
+                    "estimated_slippage_pct": round(slippage_pct, 4),
+                    "estimated_slippage_usd": round(slippage_usd, 2),
+                    "spread_estimate_usd": round(spread_usd, 2),
+                    "total_cost_usd": round(total_cost, 2),
+                    "total_cost_pct": round(total_pct, 3),
+                    "volume_24h_usd": round(volume_24h, 0),
+                    "trade_as_pct_of_volume": round(trade_size_usd / max(1, volume_24h) * 100, 4),
+                    "verdict": "low cost" if total_pct < 0.3 else "moderate" if total_pct < 0.5 else "high - consider smaller size",
+                }
+
+            result = await asyncio.to_thread(_estimate)
             return {"ok": True, "symbol": symbol, **result}
         except Exception as e:
             return {"ok": False, "error": str(e)}
