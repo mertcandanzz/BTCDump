@@ -410,6 +410,20 @@ main.collapsed #leftPanel{display:none}
 .ts-check-icon{font-size:12px}
 .ts-notes{padding:6px 14px;font-size:10px;color:var(--text-dim);border-top:1px solid var(--border)}
 
+/* ── Dashboard Grid ── */
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;overflow:auto;height:100%}
+.dash-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;overflow:hidden}
+.dash-card-title{font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.dash-card-body{font-size:11px}
+.dash-stat{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border)}
+.dash-stat:last-child{border-bottom:none}
+.dash-stat-label{color:var(--text-dim)}
+.dash-stat-value{font-weight:700;font-variant-numeric:tabular-nums}
+.dash-card.full-width{grid-column:1/-1}
+.dash-mini-list{list-style:none;padding:0}
+.dash-mini-list li{display:flex;justify-content:space-between;padding:2px 0;font-size:10px}
+@media(max-width:900px){.dash-grid{grid-template-columns:1fr}}
+
 /* Scrollbar */
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}::-webkit-scrollbar-thumb:hover{background:var(--border-light)}

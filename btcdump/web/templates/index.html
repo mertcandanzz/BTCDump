@@ -29,6 +29,7 @@
         <div class="header-left">
             <h1>BTCDump<span class="version">5.1</span></h1>
             <div class="mode-toggle">
+                <button class="mode-toggle-btn" id="modeDash" onclick="switchMode('dashboard')">Dashboard</button>
                 <button class="mode-toggle-btn active" id="modeSingle" onclick="switchMode('single')">Analysis</button>
                 <button class="mode-toggle-btn" id="modeCompare" onclick="switchMode('compare')">Compare</button>
             </div>
@@ -423,6 +424,10 @@
                     </div>
                     <div id="leaderboardResults" style="overflow:auto;font-size:11px"></div>
                 </div>
+            </div>
+            <!-- Dashboard Mode -->
+            <div id="dashboardModeContent" style="display:none">
+                <div class="dash-grid" id="dashGrid"></div>
             </div>
         </section>
     </main>

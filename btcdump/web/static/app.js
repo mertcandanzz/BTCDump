@@ -73,6 +73,7 @@ document.addEventListener('keydown', e => {
     if(e.ctrlKey && e.key==='k') { e.preventDefault(); openCmdPalette(); }
     if(e.key==='Escape') { closeCmdPalette(); closeSettings(); }
     if(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT') return;
+    if(e.key==='d'&&!e.shiftKey) switchMode('dashboard');
     if(e.key==='s'&&!e.shiftKey) switchMode('single');
     if(e.key==='c'&&!e.shiftKey) switchMode('compare');
     if(e.key==='r'||e.key==='R') refreshSignal();
@@ -85,15 +86,19 @@ document.addEventListener('keydown', e => {
 // ── Mode Switch ──
 function switchMode(mode) {
     currentMode=mode;
+    document.getElementById('modeDash').classList.toggle('active',mode==='dashboard');
     document.getElementById('modeSingle').classList.toggle('active',mode==='single');
     document.getElementById('modeCompare').classList.toggle('active',mode==='compare');
     document.getElementById('singleSignalView').style.display=mode==='single'?'':'none';
     document.getElementById('watchlistManager').style.display=mode==='compare'?'':'none';
     document.getElementById('singleModeContent').style.display=mode==='single'?'':'none';
     document.getElementById('compareModeContent').style.display=mode==='compare'?'':'none';
-    document.getElementById('mainLayout').classList.toggle('compare-mode',mode==='compare');
+    document.getElementById('dashboardModeContent').style.display=mode==='dashboard'?'':'none';
+    document.getElementById('mainLayout').classList.toggle('compare-mode',mode==='compare'||mode==='dashboard');
+    document.getElementById('leftPanel').style.display=mode==='dashboard'?'none':'';
     updateFcContext();
     if(mode==='compare'){renderWatchlistMgr();loadWatchlistOverview();loadMarketBreadth();}
+    if(mode==='dashboard') loadDashboard();
 }
 
 // ── Timeframe Pills ──
@@ -1384,12 +1389,143 @@ async function checkAnomalies(sym) {
     } catch(e) {}
 }
 
+// ── Dashboard ──
+async function loadDashboard() {
+    const grid = document.getElementById('dashGrid');
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-muted)">Loading dashboard...</div>';
+
+    // Fetch all data in parallel
+    const [healthR, fngR, marketR, dashR, perfR, breadthR] = await Promise.allSettled([
+        fetch('/api/health').then(r => r.json()),
+        fetch('/api/fear-greed').then(r => r.json()),
+        fetch('/api/market-summary').then(r => r.json()),
+        fetch('/api/dashboard').then(r => r.json()),
+        fetch('/api/performance').then(r => r.json()),
+        fetch('/api/market-breadth').then(r => r.json()),
+    ]);
+
+    const health = healthR.status === 'fulfilled' ? healthR.value : {};
+    const fng = fngR.status === 'fulfilled' ? fngR.value : {};
+    const market = marketR.status === 'fulfilled' ? marketR.value : {};
+    const dash = dashR.status === 'fulfilled' ? dashR.value : {};
+    const perf = perfR.status === 'fulfilled' ? perfR.value : {};
+    const breadth = breadthR.status === 'fulfilled' ? breadthR.value : {};
+
+    let h = '';
+
+    // Card 1: Platform Status
+    h += `<div class="dash-card">
+        <div class="dash-card-title">Platform <span style="color:var(--green);font-size:8px">v${health.version || '5.1'}</span></div>
+        <div class="dash-card-body">
+            <div class="dash-stat"><span class="dash-stat-label">ML Features</span><span class="dash-stat-value">${health.ml_features || 114}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Dimensions</span><span class="dash-stat-value">${health.ml_dimensions || 2280}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">API Routes</span><span class="dash-stat-value">${health.api_routes || 100}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Cached Signals</span><span class="dash-stat-value">${health.cached_signals || 0}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">WS Clients</span><span class="dash-stat-value">${health.websocket_clients || 0}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">LLM Providers</span><span class="dash-stat-value">${health.llm_providers || 0}</span></div>
+        </div>
+    </div>`;
+
+    // Card 2: Market Pulse
+    const fngColor = fng.value > 60 ? 'var(--green)' : fng.value < 40 ? 'var(--red)' : 'var(--yellow)';
+    const sentColor = market.market_sentiment === 'bullish' ? 'var(--green)' : market.market_sentiment === 'bearish' ? 'var(--red)' : 'var(--yellow)';
+    h += `<div class="dash-card">
+        <div class="dash-card-title">Market Pulse</div>
+        <div class="dash-card-body">
+            <div class="dash-stat"><span class="dash-stat-label">Fear & Greed</span><span class="dash-stat-value" style="color:${fngColor}">${fng.value || '--'} (${fng.classification || '--'})</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Market</span><span class="dash-stat-value" style="color:${sentColor}">${(market.market_sentiment || '--').toUpperCase()}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Gainers / Losers</span><span class="dash-stat-value"><span style="color:var(--green)">${market.gainers || 0}</span> / <span style="color:var(--red)">${market.losers || 0}</span></span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Avg Change</span><span class="dash-stat-value" style="color:${(market.avg_change_pct||0) >= 0 ? 'var(--green)' : 'var(--red)'}">${(market.avg_change_pct||0) >= 0 ? '+' : ''}${(market.avg_change_pct||0).toFixed(2)}%</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">BTC Vol Dominance</span><span class="dash-stat-value">${market.btc_volume_dominance || 0}%</span></div>
+        </div>
+    </div>`;
+
+    // Card 3: Active Signal
+    const ad = dash.active_coin || {};
+    const dirColor = (ad.direction||'').includes('BUY') ? 'var(--green)' : (ad.direction||'').includes('SELL') ? 'var(--red)' : 'var(--yellow)';
+    h += `<div class="dash-card">
+        <div class="dash-card-title">Active Signal <span style="font-size:9px;color:var(--text-muted)">${ad.symbol || '--'}</span></div>
+        <div class="dash-card-body">
+            <div style="text-align:center;padding:8px 0">
+                <div style="font-size:20px;font-weight:900;color:${dirColor}">${ad.direction || '--'}</div>
+                <div style="font-size:12px;color:var(--text-dim)">Confidence: ${(ad.confidence||0).toFixed(0)}%</div>
+                <div style="font-size:14px;font-weight:700;margin-top:4px">$${fmtP(ad.price || 0)}</div>
+            </div>
+        </div>
+    </div>`;
+
+    // Card 4: Best Opportunity
+    const best = dash.best_opportunity;
+    h += `<div class="dash-card">
+        <div class="dash-card-title">Best Opportunity</div>
+        <div class="dash-card-body">
+            ${best ? `<div style="text-align:center;padding:8px 0">
+                <div style="font-size:14px;font-weight:700">${best.symbol?.replace('USDT','/USDT') || '--'}</div>
+                <div style="font-size:16px;font-weight:900;color:${(best.direction||'').includes('BUY')?'var(--green)':'var(--red)'}">${best.direction || '--'}</div>
+                <div style="font-size:11px;color:var(--text-dim)">Confidence: ${(best.confidence||0).toFixed(0)}%</div>
+                <button class="btn btn-sm btn-primary" style="margin-top:6px" onclick="selectCoin('${best.symbol}');switchMode('single')">Analyze</button>
+            </div>` : '<div style="text-align:center;color:var(--text-muted);padding:8px">Refresh signals first</div>'}
+        </div>
+    </div>`;
+
+    // Card 5: Signal Performance (full width)
+    const sig = perf.signals || {};
+    const accColor = sig.accuracy > 55 ? 'var(--green)' : sig.accuracy > 45 ? 'var(--yellow)' : 'var(--red)';
+    h += `<div class="dash-card full-width">
+        <div class="dash-card-title">Signal Performance</div>
+        <div class="dash-card-body" style="display:flex;gap:16px;flex-wrap:wrap">
+            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
+                <span class="dash-stat-label">Accuracy</span><span class="dash-stat-value" style="font-size:18px;color:${accColor}">${sig.accuracy || 0}%</span>
+            </div>
+            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
+                <span class="dash-stat-label">Total Signals</span><span class="dash-stat-value" style="font-size:18px">${sig.total_signals || 0}</span>
+            </div>
+            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
+                <span class="dash-stat-label">Correct</span><span class="dash-stat-value" style="font-size:18px;color:var(--green)">${sig.correct || 0}</span>
+            </div>
+            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
+                <span class="dash-stat-label">Wrong</span><span class="dash-stat-value" style="font-size:18px;color:var(--red)">${sig.wrong || 0}</span>
+            </div>
+            <div class="dash-stat" style="flex:1;min-width:80px;flex-direction:column;text-align:center;border:none">
+                <span class="dash-stat-label">Pending</span><span class="dash-stat-value" style="font-size:18px">${sig.pending || 0}</span>
+            </div>
+        </div>
+    </div>`;
+
+    // Card 6: Watchlist Breadth
+    h += `<div class="dash-card">
+        <div class="dash-card-title">Watchlist Breadth</div>
+        <div class="dash-card-body">
+            <div class="dash-stat"><span class="dash-stat-label">Coins</span><span class="dash-stat-value">${breadth.total || 0}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Bullish</span><span class="dash-stat-value" style="color:var(--green)">${breadth.bullish || 0} (${breadth.bullish_pct || 0}%)</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Bearish</span><span class="dash-stat-value" style="color:var(--red)">${breadth.bearish || 0} (${breadth.bearish_pct || 0}%)</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Avg RSI</span><span class="dash-stat-value">${breadth.avg_rsi || 0}</span></div>
+            <div class="dash-stat"><span class="dash-stat-label">Sentiment</span><span class="dash-stat-value" style="color:${breadth.sentiment === 'bullish' ? 'var(--green)' : breadth.sentiment === 'bearish' ? 'var(--red)' : 'var(--yellow)'}">${(breadth.sentiment || 'neutral').toUpperCase()}</span></div>
+        </div>
+    </div>`;
+
+    // Card 7: Top Movers
+    h += `<div class="dash-card">
+        <div class="dash-card-title">Top Movers</div>
+        <div class="dash-card-body">
+            <ul class="dash-mini-list">`;
+    (market.top_gainers || []).slice(0, 3).forEach(c => {
+        h += `<li><span style="cursor:pointer" onclick="selectCoin('${c.symbol}');switchMode('single')">${c.baseAsset}</span><span style="color:var(--green);font-weight:700">+${c.change}%</span></li>`;
+    });
+    (market.top_losers || []).slice(0, 3).forEach(c => {
+        h += `<li><span style="cursor:pointer" onclick="selectCoin('${c.symbol}');switchMode('single')">${c.baseAsset}</span><span style="color:var(--red);font-weight:700">${c.change}%</span></li>`;
+    });
+    h += `</ul></div></div>`;
+
+    grid.innerHTML = h;
+}
+
 // ── Init ──
 async function init(){
     try{const r=await fetch('/api/providers');providerStatus=await r.json();}catch(e){}
     try{const r=await fetch('/api/signal/cached');const j=await r.json();if(j.ok&&j.data?.current_price)updateSignalUI(j.data);}catch(e){}
     await syncWL(); loadTickerStrip(); loadCandlestickChart(); updateFcContext(); connectWS();
     loadFearGreed(); loadCustomPresets(); checkAnomalies();
-    addDiscMsg('system','BTCDump v5.0 | Ctrl+K: search | s/c: mode | R: refresh | B: buy | Shift+S: short | X: close | T: trade setup');
+    addDiscMsg('system','BTCDump v5.1 | D:dashboard S:analysis C:compare | Ctrl+K:search R:refresh B:buy Shift+S:short X:close T:setup');
 }
 init();
