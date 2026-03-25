@@ -1680,6 +1680,22 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     # Vortex diff: positive = bullish trend, negative = bearish
     df["vortex_diff"] = vi_plus - vi_minus
 
+    # ── Detrended Price Oscillator (DPO) ──
+    # Removes trend to isolate price cycles. Complements FFT cycle detection.
+    # DPO = Close - SMA(period/2 + 1 bars ago)
+    dpo_period = 20
+    sma_shifted = c.rolling(dpo_period).mean().shift(dpo_period // 2 + 1)
+    df["dpo"] = (c - sma_shifted) / c.replace(0, np.nan) * 100  # normalized %
+
+    # ── Ultimate Oscillator (Larry Williams) ──
+    # Multi-timeframe buying pressure: weighted combo of 7/14/28 periods
+    bp = c - pd.concat([l, c.shift(1)], axis=1).min(axis=1)  # buying pressure
+    tr_uo = pd.concat([h - l, (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1).max(axis=1)
+    avg7 = bp.rolling(7).sum() / tr_uo.rolling(7).sum().replace(0, np.nan)
+    avg14 = bp.rolling(14).sum() / tr_uo.rolling(14).sum().replace(0, np.nan)
+    avg28 = bp.rolling(28).sum() / tr_uo.rolling(28).sum().replace(0, np.nan)
+    df["ultimate_osc"] = (4 * avg7 + 2 * avg14 + avg28) / 7 * 100
+
     return df
 
 
