@@ -100,6 +100,19 @@
                     </div>
                 </div>
 
+                <!-- Direction Probability -->
+                <div class="prob-section" id="probSection" style="display:none">
+                    <div class="prob-bar-wrap">
+                        <div class="prob-bar">
+                            <div class="prob-up" id="probUp" style="width:50%"></div>
+                        </div>
+                        <div class="prob-labels">
+                            <span class="prob-label-up" id="probUpLabel">50%</span>
+                            <span class="prob-label-down" id="probDownLabel">50%</span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Market Regime -->
                 <div class="regime-section" id="regimeSection" style="display:none">
                     <div class="regime-badge" id="regimeBadge">
@@ -205,6 +218,7 @@
                 <div style="padding:6px 14px;display:flex;gap:4px">
                     <button class="btn btn-primary" style="flex:1" onclick="generateTradeSetup()">Trade Setup</button>
                     <button class="btn" style="flex:1" onclick="generateNarrative()">AI Report</button>
+                    <button class="btn btn-ghost" onclick="copyTradeCard()" title="Copy trade card to clipboard">&#128203;</button>
                 </div>
             </div>
 

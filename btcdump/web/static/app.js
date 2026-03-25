@@ -250,6 +250,7 @@ function updateSignalUI(d) {
     loadPredictionRange(d.symbol || activeSymbol);
     loadMarketHealth(d.symbol || activeSymbol);
     loadConsensus(d.symbol || activeSymbol);
+    loadDirectionProb(d.symbol || activeSymbol);
 }
 
 // RSI Semi-circle Gauge
@@ -959,6 +960,32 @@ async function generateNarrative() {
         addDiscMsg('system', '--- End Report ---');
         toast('AI Report generated', 'success');
     } catch(e) { toast('Report failed', 'error'); }
+}
+
+// ── Direction Probability ──
+async function loadDirectionProb(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/direction-probability`);
+        const j = await r.json();
+        if (!j.ok) return;
+        const sec = document.getElementById('probSection');
+        sec.style.display = '';
+        const pUp = j.p_up * 100;
+        document.getElementById('probUp').style.width = pUp + '%';
+        document.getElementById('probUpLabel').textContent = `UP ${pUp.toFixed(0)}%`;
+        document.getElementById('probDownLabel').textContent = `DOWN ${(100 - pUp).toFixed(0)}%`;
+    } catch(e) {}
+}
+
+// ── Trade Card ──
+async function copyTradeCard() {
+    try {
+        const r = await fetch(`/api/coin/${activeSymbol}/trade-card`);
+        const j = await r.json();
+        if (!j.ok) { toast(j.error, 'error'); return; }
+        await navigator.clipboard.writeText(j.card);
+        toast('Trade card copied to clipboard!', 'success');
+    } catch(e) { toast('Copy failed', 'error'); }
 }
 
 // ── Signal Consensus ──

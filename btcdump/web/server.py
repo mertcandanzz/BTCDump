@@ -1122,6 +1122,86 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Direction Probability ──────────────────────────────
+
+    @app.get("/api/coin/{symbol}/direction-probability")
+    async def direction_probability(symbol: str):
+        """Predict UP/DOWN probability from ensemble model disagreement."""
+        try:
+            def _predict():
+                ensemble = state.coin_manager.ensembles.get(symbol)
+                if not ensemble:
+                    ensemble = state.pipeline.load(symbol, state.coin_manager.active_interval)
+                if not ensemble:
+                    return None
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                return state.pipeline.predict_direction_probability(ensemble, data.df)
+
+            result = await asyncio.to_thread(_predict)
+            if not result:
+                return {"ok": False, "error": "No model. Refresh first."}
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Advanced Feature Selection ───────────────────────
+
+    @app.get("/api/feature-selection")
+    async def feature_selection():
+        """Analyze which features to keep/prune based on importance."""
+        ens = state.coin_manager.active_ensemble
+        if not ens:
+            return {"ok": False, "error": "No model trained."}
+        result = state.pipeline.analyze_feature_importance(ens)
+        if "error" in result:
+            return {"ok": False, **result}
+        return {"ok": True, **result}
+
+    # ── Shareable Trade Card ─────────────────────────────
+
+    @app.get("/api/coin/{symbol}/trade-card")
+    async def trade_card(symbol: str):
+        """Generate a copy-paste text trade card."""
+        try:
+            cached = state.coin_manager.signal_cache.get(symbol, {})
+            if not cached or cached.get("status") != "ready":
+                return {"ok": False, "error": "No signal data."}
+
+            direction = cached.get("direction", "HOLD")
+            confidence = cached.get("confidence", 0)
+            price = cached.get("current_price", 0)
+            pred = cached.get("predicted_price", 0)
+            change = cached.get("change_pct", 0)
+            rsi = cached.get("rsi", 0)
+            rr = cached.get("risk_reward", 0)
+            agreement = cached.get("model_agreement", 0) * 100
+            interval = cached.get("interval", "1h")
+
+            emoji = {"STRONG BUY": "🟢🟢", "BUY": "🟢", "HOLD": "🟡",
+                     "SELL": "🔴", "STRONG SELL": "🔴🔴"}.get(direction, "⚪")
+
+            display = symbol.replace("USDT", "/USDT")
+
+            card = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━
+{emoji} {display} | {direction}
+━━━━━━━━━━━━━━━━━━━━━━━━
+Price:      ${price:,.2f}
+Prediction: ${pred:,.2f} ({change:+.2f}%)
+Confidence: {confidence:.0f}%
+━━━━━━━━━━━━━━━━━━━━━━━━
+RSI: {rsi:.0f} | R/R: {rr:.1f} | Agreement: {agreement:.0f}%
+Interval: {interval}
+━━━━━━━━━━━━━━━━━━━━━━━━
+BTCDump AI Signal Engine v5.1
+""".strip()
+
+            return {"ok": True, "card": card, "symbol": symbol}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Batch Multi-Coin Backtest ───────────────────────────
 
     @app.get("/api/batch-backtest")

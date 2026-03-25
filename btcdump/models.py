@@ -60,6 +60,11 @@ class TrainedEnsemble:
     feature_importances: List[float] = field(default_factory=list)
     feature_names: List[str] = field(default_factory=list)
 
+    # Feature selection mask (which features survived pruning)
+    selected_features_mask: Optional[List[bool]] = None
+    # Direction probability from classification
+    direction_probabilities: Optional[Dict[str, float]] = None
+
     @property
     def avg_mape(self) -> float:
         if not self.fold_results:
@@ -276,6 +281,98 @@ class ModelPipeline:
                 "high": round(prediction + 2 * combined_std, 6),
             },
             "prediction_range_pct": round(2 * combined_std / current_price * 100, 2),
+        }
+
+    def predict_direction_probability(
+        self, ensemble: TrainedEnsemble, raw_df: pd.DataFrame,
+    ) -> Dict:
+        """Predict probability of price going UP vs DOWN.
+
+        Uses ensemble disagreement + historical accuracy to estimate
+        the probability distribution of direction.
+        """
+        enriched = indicators.compute_all(raw_df.copy(), self._config.indicators)
+        latest = self._feature_eng.build_latest(enriched)
+        scaled = ensemble.scaler.transform(latest)
+        current_price = float(raw_df["close"].iloc[-1])
+
+        preds = {}
+        for name, model in ensemble.models.items():
+            preds[name] = float(model.predict(scaled)[0])
+
+        # Count how many models predict UP vs DOWN
+        up_count = sum(1 for p in preds.values() if p > current_price)
+        down_count = sum(1 for p in preds.values() if p <= current_price)
+        total = len(preds)
+
+        # Base probability from model agreement
+        p_up_base = up_count / total
+        p_down_base = down_count / total
+
+        # Adjust by confidence (how far predictions deviate from current)
+        pred_array = np.array(list(preds.values()))
+        avg_change = float((pred_array.mean() - current_price) / current_price * 100)
+        confidence_boost = min(0.2, abs(avg_change) / 10)
+
+        if avg_change > 0:
+            p_up = min(0.95, p_up_base + confidence_boost)
+            p_down = 1 - p_up
+        else:
+            p_down = min(0.95, p_down_base + confidence_boost)
+            p_up = 1 - p_down
+
+        return {
+            "p_up": round(p_up, 3),
+            "p_down": round(p_down, 3),
+            "p_strong_up": round(max(0, p_up - 0.3) if avg_change > 1 else 0, 3),
+            "p_strong_down": round(max(0, p_down - 0.3) if avg_change < -1 else 0, 3),
+            "expected_change_pct": round(avg_change, 3),
+            "model_votes": {"up": up_count, "down": down_count},
+            "individual_changes": {
+                name: round((pred - current_price) / current_price * 100, 3)
+                for name, pred in preds.items()
+            },
+        }
+
+    @staticmethod
+    def analyze_feature_importance(ensemble: TrainedEnsemble, threshold: float = 0.005) -> Dict:
+        """Analyze features and identify which ones to keep/prune.
+
+        Returns recommended feature selection based on importance threshold.
+        """
+        if not ensemble.feature_importances or not ensemble.feature_names:
+            return {"error": "No feature importance data"}
+
+        pairs = list(zip(ensemble.feature_names, ensemble.feature_importances))
+        pairs.sort(key=lambda x: x[1], reverse=True)
+
+        total = sum(imp for _, imp in pairs)
+        cumulative = 0
+        core_features = []
+        noise_features = []
+
+        for name, imp in pairs:
+            if imp >= threshold:
+                core_features.append(name)
+                cumulative += imp
+            else:
+                noise_features.append(name)
+
+        # Coverage: what % of importance do core features capture
+        coverage = cumulative / total * 100 if total > 0 else 0
+
+        return {
+            "total_features": len(pairs),
+            "core_features": core_features,
+            "core_count": len(core_features),
+            "noise_features": noise_features,
+            "noise_count": len(noise_features),
+            "coverage_pct": round(coverage, 1),
+            "top_20": [
+                {"name": n, "importance": round(i, 5), "cumulative_pct": round(sum(x[1] for x in pairs[:idx+1]) / total * 100, 1)}
+                for idx, (n, i) in enumerate(pairs[:20])
+            ],
+            "recommendation": f"Keep {len(core_features)} features ({coverage:.0f}% importance). Drop {len(noise_features)} noise features.",
         }
 
     # --- Persistence ---
