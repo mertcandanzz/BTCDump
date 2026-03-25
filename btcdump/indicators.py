@@ -49,6 +49,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _entropy_feature(df)
     df = _adaptive_ma_features(df)
     df = _seasonality_features(df)
+    df = _cycle_features(df)
     return df.copy()  # final defragment
 
 
@@ -1129,6 +1130,102 @@ def compute_seasonality_profile(df: pd.DataFrame) -> dict:
             }
 
     return {"hourly": hourly, "daily": daily}
+
+
+def _cycle_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Dominant cycle detection using FFT and autocorrelation.
+
+    Identifies the strongest repeating cycle in price data
+    and computes where we are in that cycle (phase).
+    """
+    c = df["close"]
+    ret = c.pct_change().fillna(0)
+
+    cycle_phase = pd.Series(0.0, index=df.index)
+    cycle_strength = pd.Series(0.0, index=df.index)
+    dominant_period = pd.Series(0.0, index=df.index)
+
+    window = 64  # must be power of 2 for efficient FFT
+
+    for i in range(window, len(df)):
+        chunk = ret.iloc[i - window:i].values
+
+        # FFT
+        fft = np.fft.rfft(chunk)
+        magnitudes = np.abs(fft)
+
+        # Skip DC component (index 0) and Nyquist
+        if len(magnitudes) < 3:
+            continue
+
+        mags = magnitudes[1:-1]
+        freqs = np.fft.rfftfreq(window)[1:-1]
+
+        if len(mags) == 0 or mags.max() == 0:
+            continue
+
+        # Dominant frequency (highest magnitude)
+        peak_idx = int(np.argmax(mags))
+        peak_freq = freqs[peak_idx]
+        period = 1.0 / peak_freq if peak_freq > 0 else window
+
+        # Cycle strength: peak magnitude vs total (0=no cycle, 1=perfect sine)
+        strength = float(mags[peak_idx] / mags.sum()) if mags.sum() > 0 else 0
+
+        # Phase: where are we in the cycle (0 to 2*pi)
+        phase = float(np.angle(fft[peak_idx + 1]))  # +1 for DC offset
+        # Normalize to -1 to +1 (sine of phase)
+        phase_signal = float(np.sin(phase))
+
+        cycle_phase.iloc[i] = phase_signal
+        cycle_strength.iloc[i] = strength
+        dominant_period.iloc[i] = min(period, window)
+
+    df["cycle_phase"] = cycle_phase
+    df["cycle_strength"] = cycle_strength
+    df["dominant_period"] = dominant_period
+
+    return df
+
+
+def compute_cross_asset_features(pair_df: pd.DataFrame, btc_df: pd.DataFrame) -> dict:
+    """Compute cross-asset features: BTC as leading indicator for altcoins.
+
+    Returns feature values to inject into the pair's feature set.
+    """
+    if len(pair_df) < 30 or len(btc_df) < 30:
+        return {}
+
+    min_len = min(len(pair_df), len(btc_df))
+    pair_ret = pair_df["close"].pct_change().tail(min_len).values
+    btc_ret = btc_df["close"].pct_change().tail(min_len).values
+
+    # BTC lead-lag: correlation of BTC(t) with pair(t+1)
+    if len(btc_ret) > 5:
+        lead_corr = float(np.corrcoef(btc_ret[:-1], pair_ret[1:])[0, 1])
+    else:
+        lead_corr = 0
+
+    # BTC momentum (last 5 bars) as predictor for alt
+    btc_mom_5 = float(np.sum(btc_ret[-5:])) * 100
+
+    # BTC volatility regime
+    btc_vol = float(np.std(btc_ret[-20:])) if len(btc_ret) >= 20 else 0
+
+    # Relative beta: how much the pair moves per 1% BTC move
+    if len(btc_ret) >= 20:
+        cov = float(np.cov(btc_ret[-20:], pair_ret[-20:])[0][1])
+        var_btc = float(np.var(btc_ret[-20:]))
+        beta = cov / var_btc if var_btc > 0 else 1
+    else:
+        beta = 1
+
+    return {
+        "btc_lead_corr": round(lead_corr, 4),
+        "btc_momentum_5": round(btc_mom_5, 4),
+        "btc_volatility": round(btc_vol, 6),
+        "beta_vs_btc": round(beta, 3),
+    }
 
 
 def compute_fibonacci_levels(df: pd.DataFrame, lookback: int = 100) -> list[dict]:

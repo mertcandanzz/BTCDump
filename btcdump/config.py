@@ -113,6 +113,8 @@ class FeatureConfig:
         "kama_dist", "dema_dist", "tema_dist", "kama_slope",
         # v5.0 Pro: Seasonality
         "seasonal_hour_bias", "seasonal_dow_bias",
+        # v5.0 Pro: Cycle Detection
+        "cycle_phase", "cycle_strength", "dominant_period",
     )
 
 
