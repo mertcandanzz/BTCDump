@@ -666,6 +666,109 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Market Regime Classifier ───────────────────────────
+
+    @app.get("/api/coin/{symbol}/regime")
+    async def get_market_regime(symbol: str):
+        """Classify current market regime into 4 states."""
+        try:
+            def _classify():
+                from btcdump import indicators as ind
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = ind.compute_all(data.df.copy(), state.config.indicators)
+                row = enriched.iloc[-1]
+
+                adx = float(row.get("ADX", 0))
+                efficiency = float(row.get("efficiency_ratio", 0.5))
+                hurst = float(row.get("hurst_exponent", 0.5))
+                choppiness = float(row.get("choppiness", 50))
+                garch = float(row.get("garch_proxy", 1))
+                rsi = float(row.get("RSI", 50))
+                bb_width = float(row.get("bb_width", 0.02))
+                squeeze = float(row.get("squeeze_ratio", 1))
+                macd = float(row.get("MACD", 0))
+                macd_sig = float(row.get("MACD_signal", 0))
+                variance_ratio = float(row.get("variance_ratio", 1))
+
+                # Scoring system for 4 regimes
+                trending_score = 0
+                trending_score += min(40, adx * 1.0)           # ADX > 25 = trending
+                trending_score += efficiency * 30               # ER near 1 = trending
+                trending_score += (hurst - 0.5) * 40           # H > 0.5 = trending
+                trending_score += max(0, (50 - choppiness)) * 0.5  # Low choppiness
+
+                # Direction
+                bullish_score = 0
+                if macd > macd_sig:
+                    bullish_score += 25
+                if rsi > 50:
+                    bullish_score += 25
+                ret_20 = float(row.get("returns_20", 0))
+                bullish_score += min(25, max(-25, ret_20 * 500))
+
+                # Volatility expansion
+                vol_expansion_score = 0
+                vol_expansion_score += max(0, (garch - 1)) * 30  # GARCH > 1 = expanding
+                vol_expansion_score += max(0, (1 - squeeze)) * 40  # Squeeze ratio < 1
+                vol_expansion_score += max(0, bb_width * 500)
+
+                # Range-bound indicators
+                range_score = 0
+                range_score += max(0, (0.5 - efficiency)) * 60  # Low ER
+                range_score += max(0, choppiness - 50) * 0.8    # High choppiness
+                range_score += max(0, (1 - variance_ratio)) * 30  # VR < 1
+
+                # Classify
+                if trending_score > 50 and bullish_score > 40:
+                    regime = "trending_up"
+                    desc = "Strong uptrend with momentum. Favor long positions, trail stops."
+                    strategy = "Trend Following (Long)"
+                    color = "#26a69a"
+                elif trending_score > 50 and bullish_score < 20:
+                    regime = "trending_down"
+                    desc = "Strong downtrend. Favor shorts or stay flat. Avoid catching knives."
+                    strategy = "Trend Following (Short)"
+                    color = "#ef5350"
+                elif vol_expansion_score > 40 and squeeze < 0.8:
+                    regime = "breakout"
+                    desc = "Volatility expanding from squeeze. Watch for breakout direction confirmation."
+                    strategy = "Breakout / Momentum"
+                    color = "#ff9800"
+                else:
+                    regime = "range"
+                    desc = "Choppy/sideways market. Mean-reversion strategies work best. Tight stops."
+                    strategy = "Mean Reversion / Scalping"
+                    color = "#7b68ee"
+
+                return {
+                    "regime": regime,
+                    "description": desc,
+                    "strategy": strategy,
+                    "color": color,
+                    "scores": {
+                        "trending": round(trending_score, 1),
+                        "bullish": round(bullish_score, 1),
+                        "volatility": round(vol_expansion_score, 1),
+                        "range": round(range_score, 1),
+                    },
+                    "indicators": {
+                        "adx": round(adx, 1),
+                        "efficiency_ratio": round(efficiency, 3),
+                        "hurst": round(hurst, 3),
+                        "choppiness": round(choppiness, 1),
+                        "garch_proxy": round(garch, 2),
+                        "squeeze_ratio": round(squeeze, 3),
+                        "variance_ratio": round(variance_ratio, 3),
+                    },
+                }
+
+            result = await asyncio.to_thread(_classify)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Smart Ranking (best trade opportunities) ──────────
 
     @app.get("/api/smart-rank")

@@ -73,9 +73,13 @@ document.addEventListener('keydown', e => {
     if(e.ctrlKey && e.key==='k') { e.preventDefault(); openCmdPalette(); }
     if(e.key==='Escape') { closeCmdPalette(); closeSettings(); }
     if(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT') return;
-    if(e.key==='s'||e.key==='S') switchMode('single');
-    if(e.key==='c'||e.key==='C') switchMode('compare');
+    if(e.key==='s'&&!e.shiftKey) switchMode('single');
+    if(e.key==='c'&&!e.shiftKey) switchMode('compare');
     if(e.key==='r'||e.key==='R') refreshSignal();
+    if(e.key==='b'||e.key==='B') { paperTrade('long'); toast('Quick BUY (B key)','info'); }
+    if(e.key==='S'&&e.shiftKey) { paperTrade('short'); toast('Quick SHORT (Shift+S)','info'); }
+    if(e.key==='x'||e.key==='X') { paperClose(activeSymbol); setTimeout(loadPortfolio,500); toast('Close position (X key)','info'); }
+    if(e.key==='t'||e.key==='T') generateTradeSetup();
 });
 
 // ── Mode Switch ──
@@ -237,6 +241,7 @@ function updateSignalUI(d) {
     document.getElementById('lastUpdated').textContent='Updated '+new Date().toLocaleTimeString();
     updateFcContext();
     loadSLTP(d.symbol || activeSymbol);
+    loadRegime(d.symbol || activeSymbol);
 }
 
 // RSI Semi-circle Gauge
@@ -581,12 +586,42 @@ async function loadPortfolio() {
             });
             h += '</div>';
         }
-        h += `<div style="padding:8px 14px;display:flex;gap:6px">
+        h += `<div style="padding:8px 14px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
             <button class="btn btn-primary btn-sm" onclick="paperTrade('long')">Buy ${activeSymbol.replace('USDT','')}</button>
             <button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="paperTrade('short')">Short ${activeSymbol.replace('USDT','')}</button>
             <button class="btn btn-sm btn-ghost" onclick="fetch('/api/paper/reset',{method:'POST'});setTimeout(loadPortfolio,300)">Reset</button>
+            <button class="btn btn-sm btn-ghost" onclick="window.open('/api/export/paper-trades','_blank')">Export CSV</button>
+            <span style="font-size:9px;color:var(--text-muted);margin-left:auto">B=Buy S=Short X=Close T=Setup</span>
         </div>`;
+
+        // Trade history equity visualization
+        const histR = await fetch('/api/paper/history');
+        const histJ = await histR.json();
+        if (histJ.ok && histJ.trades?.length > 1) {
+            h += '<div style="padding:4px 14px"><canvas id="portfolioEquityCanvas" style="width:100%;height:120px"></canvas></div>';
+            h += '<div style="padding:4px 14px;font-size:10px;border-top:1px solid var(--border)">';
+            h += '<strong>Recent Trades:</strong><br>';
+            histJ.trades.slice(-5).reverse().forEach(t => {
+                const pc = t.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                h += `<span style="color:${pc}">${t.symbol.replace('USDT','')} ${t.side} ${t.pnl>=0?'+':''}$${t.pnl} (${t.pnl_pct}%)</span> | `;
+            });
+            h += '</div>';
+        }
+
         el.innerHTML = h;
+
+        // Draw equity curve from trade history
+        if (histJ.ok && histJ.trades?.length > 1) {
+            const equityData = [];
+            let equity = 10000;
+            equityData.push([equity, 0]);
+            histJ.trades.forEach(t => {
+                equity += t.pnl;
+                equityData.push([equity, 0]);
+            });
+            const canvas = document.getElementById('portfolioEquityCanvas');
+            if (canvas) drawEquityCurve(canvas, equityData);
+        }
     } catch(e) {}
 }
 
@@ -650,6 +685,24 @@ async function updateOutcomes() {
             toast(`Updated ${j.updated} outcomes`, 'success');
             loadSignalHistory();
         }
+    } catch(e) {}
+}
+
+// ── Market Regime ──
+async function loadRegime(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/regime`);
+        const j = await r.json();
+        if (!j.ok) return;
+        const sec = document.getElementById('regimeSection');
+        sec.style.display = '';
+        const icons = {trending_up: '📈', trending_down: '📉', breakout: '💥', range: '↔️'};
+        document.getElementById('regimeIcon').textContent = icons[j.regime] || '❓';
+        document.getElementById('regimeName').textContent = j.regime.replace('_', ' ').toUpperCase();
+        document.getElementById('regimeName').style.color = j.color;
+        document.getElementById('regimeStrategy').textContent = j.strategy;
+        document.getElementById('regimeBadge').style.borderColor = j.color;
+        document.getElementById('regimeBadge').title = j.description;
     } catch(e) {}
 }
 
@@ -1030,6 +1083,6 @@ async function init(){
     try{const r=await fetch('/api/signal/cached');const j=await r.json();if(j.ok&&j.data?.current_price)updateSignalUI(j.data);}catch(e){}
     await syncWL(); loadTickerStrip(); loadCandlestickChart(); updateFcContext(); connectWS();
     loadFearGreed(); loadCustomPresets(); checkAnomalies();
-    addDiscMsg('system','BTCDump v5.0 | Ctrl+K: search | S/C: mode | R: refresh | Live prices active');
+    addDiscMsg('system','BTCDump v5.0 | Ctrl+K: search | s/c: mode | R: refresh | B: buy | Shift+S: short | X: close | T: trade setup');
 }
 init();
