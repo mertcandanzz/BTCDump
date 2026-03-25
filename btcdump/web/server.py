@@ -685,6 +685,265 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── DCA Simulator ─────────────────────────────────────
+
+    @app.get("/api/coin/{symbol}/dca-simulate")
+    async def dca_simulate(symbol: str, amount: float = 100, frequency: str = "weekly"):
+        """Simulate Dollar Cost Averaging on historical data."""
+        try:
+            def _simulate():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                df = data.df.copy()
+
+                # Determine step size based on frequency and interval
+                interval = state.coin_manager.active_interval
+                if frequency == "daily":
+                    step = {"1h": 24, "4h": 6, "1d": 1, "15m": 96, "30m": 48, "5m": 288}.get(interval, 24)
+                elif frequency == "weekly":
+                    step = {"1h": 168, "4h": 42, "1d": 7, "15m": 672, "30m": 336, "5m": 2016}.get(interval, 168)
+                else:  # monthly
+                    step = {"1h": 720, "4h": 180, "1d": 30, "15m": 2880}.get(interval, 720)
+
+                step = min(step, len(df) // 3)  # at least 3 purchases
+                if step < 1:
+                    step = 1
+
+                total_invested = 0.0
+                total_coins = 0.0
+                purchases = []
+                equity_curve = []
+
+                for i in range(0, len(df), step):
+                    price = float(df["close"].iloc[i])
+                    if price <= 0:
+                        continue
+                    coins_bought = amount / price
+                    total_invested += amount
+                    total_coins += coins_bought
+                    current_value = total_coins * price
+                    purchases.append({
+                        "price": round(price, 6),
+                        "coins": round(coins_bought, 8),
+                        "invested": round(total_invested, 2),
+                        "value": round(current_value, 2),
+                    })
+                    equity_curve.append([round(current_value, 2), round(total_invested, 2)])
+
+                current_price = float(df["close"].iloc[-1])
+                current_value = total_coins * current_price
+                avg_price = total_invested / total_coins if total_coins > 0 else 0
+                pnl = current_value - total_invested
+                pnl_pct = (pnl / total_invested * 100) if total_invested > 0 else 0
+
+                # Compare with lump sum (all money at start)
+                start_price = float(df["close"].iloc[0])
+                lump_coins = total_invested / start_price if start_price > 0 else 0
+                lump_value = lump_coins * current_price
+                lump_pnl_pct = ((lump_value - total_invested) / total_invested * 100) if total_invested > 0 else 0
+
+                return {
+                    "total_invested": round(total_invested, 2),
+                    "current_value": round(current_value, 2),
+                    "total_coins": round(total_coins, 8),
+                    "avg_buy_price": round(avg_price, 6),
+                    "current_price": round(current_price, 6),
+                    "pnl": round(pnl, 2),
+                    "pnl_pct": round(pnl_pct, 2),
+                    "num_purchases": len(purchases),
+                    "frequency": frequency,
+                    "amount_per_buy": amount,
+                    "lump_sum_pnl_pct": round(lump_pnl_pct, 2),
+                    "dca_vs_lump": round(pnl_pct - lump_pnl_pct, 2),
+                    "equity_curve": equity_curve[-50:],  # last 50 points
+                }
+
+            result = await asyncio.to_thread(_simulate)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Portfolio Optimizer ───────────────────────────────
+
+    @app.get("/api/portfolio-optimize")
+    async def portfolio_optimize():
+        """Markowitz mean-variance portfolio optimization for watchlist."""
+        try:
+            def _optimize():
+                import pandas as _pdo
+                watchlist = state.coin_manager.watchlist
+                if len(watchlist) < 2:
+                    return {"error": "Need 2+ coins"}
+
+                interval = state.coin_manager.active_interval
+                returns_map = {}
+                for sym in watchlist:
+                    try:
+                        data = state.coin_manager.fetcher.fetch_with_cache(sym, interval)
+                        ret = data.df["close"].pct_change().dropna().tail(200)
+                        returns_map[sym] = ret.values
+                    except Exception:
+                        continue
+
+                if len(returns_map) < 2:
+                    return {"error": "Need price data for 2+ coins"}
+
+                min_len = min(len(v) for v in returns_map.values())
+                df = _pdo.DataFrame({k: v[-min_len:] for k, v in returns_map.items()})
+
+                mean_returns = df.mean() * 252  # annualized (rough)
+                cov_matrix = df.cov() * 252
+                n = len(df.columns)
+                symbols = list(df.columns)
+
+                # Monte Carlo: random portfolios
+                best_sharpe = -999
+                best_weights = None
+                min_vol_val = 999
+                min_vol_weights = None
+
+                np_opt = _np
+                for _ in range(5000):
+                    w = np_opt.random.random(n)
+                    w /= w.sum()
+
+                    port_ret = float(np_opt.dot(w, mean_returns))
+                    port_vol = float(np_opt.sqrt(np_opt.dot(w.T, np_opt.dot(cov_matrix.values, w))))
+                    sharpe = port_ret / port_vol if port_vol > 0 else 0
+
+                    if sharpe > best_sharpe:
+                        best_sharpe = sharpe
+                        best_weights = w
+                    if port_vol < min_vol_val:
+                        min_vol_val = port_vol
+                        min_vol_weights = w
+
+                # Equal weight baseline
+                eq_w = np_opt.ones(n) / n
+                eq_ret = float(np_opt.dot(eq_w, mean_returns))
+                eq_vol = float(np_opt.sqrt(np_opt.dot(eq_w.T, np_opt.dot(cov_matrix.values, eq_w))))
+
+                result = {
+                    "max_sharpe": {
+                        "weights": {symbols[i]: round(float(best_weights[i]), 4) for i in range(n)},
+                        "expected_return": round(float(np_opt.dot(best_weights, mean_returns)) * 100, 2),
+                        "volatility": round(float(np_opt.sqrt(np_opt.dot(best_weights.T, np_opt.dot(cov_matrix.values, best_weights)))) * 100, 2),
+                        "sharpe_ratio": round(best_sharpe, 3),
+                    },
+                    "min_volatility": {
+                        "weights": {symbols[i]: round(float(min_vol_weights[i]), 4) for i in range(n)},
+                        "expected_return": round(float(np_opt.dot(min_vol_weights, mean_returns)) * 100, 2),
+                        "volatility": round(min_vol_val * 100, 2),
+                    },
+                    "equal_weight": {
+                        "expected_return": round(eq_ret * 100, 2),
+                        "volatility": round(eq_vol * 100, 2),
+                        "sharpe_ratio": round(eq_ret / eq_vol if eq_vol > 0 else 0, 3),
+                    },
+                    "symbols": symbols,
+                }
+                return result
+
+            result = await asyncio.to_thread(_optimize)
+            if "error" in result:
+                return {"ok": False, **result}
+            return {"ok": True, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Signal Calibration ───────────────────────────────
+
+    @app.get("/api/signal-calibration")
+    async def signal_calibration():
+        """Analyze if confidence scores are well-calibrated."""
+        records = state.signal_history.get_history(limit=500)
+        resolved = [r for r in records if r.get("outcome") in ("correct", "wrong")]
+
+        if len(resolved) < 10:
+            return {"ok": False, "error": "Need 10+ resolved signals for calibration"}
+
+        # Bucket by confidence ranges
+        buckets = {}
+        for r in resolved:
+            conf = r.get("confidence", 50)
+            bucket = int(conf // 10) * 10  # 0-10, 10-20, etc.
+            bucket_key = f"{bucket}-{bucket+10}"
+            if bucket_key not in buckets:
+                buckets[bucket_key] = {"total": 0, "correct": 0}
+            buckets[bucket_key]["total"] += 1
+            if r["outcome"] == "correct":
+                buckets[bucket_key]["correct"] += 1
+
+        calibration = {}
+        for k, v in sorted(buckets.items()):
+            if v["total"] >= 3:
+                actual_accuracy = v["correct"] / v["total"] * 100
+                # Expected accuracy is the midpoint of the bucket
+                mid = int(k.split("-")[0]) + 5
+                calibration[k] = {
+                    "expected": mid,
+                    "actual": round(actual_accuracy, 1),
+                    "count": v["total"],
+                    "gap": round(actual_accuracy - mid, 1),  # positive = overconfident
+                    "well_calibrated": abs(actual_accuracy - mid) < 15,
+                }
+
+        # Overall calibration score
+        if calibration:
+            avg_gap = sum(abs(v["gap"]) for v in calibration.values()) / len(calibration)
+            cal_score = max(0, round(100 - avg_gap * 2, 1))
+        else:
+            cal_score = 0
+
+        return {
+            "ok": True,
+            "calibration": calibration,
+            "calibration_score": cal_score,
+            "interpretation": (
+                "Well-calibrated" if cal_score > 70 else
+                "Moderately calibrated" if cal_score > 50 else
+                "Poorly calibrated - confidence scores need adjustment"
+            ),
+            "total_analyzed": len(resolved),
+        }
+
+    # ── Funding Rate ─────────────────────────────────────
+
+    @app.get("/api/coin/{symbol}/funding-rate")
+    async def get_funding_rate(symbol: str):
+        """Get current funding rate from Binance Futures."""
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5) as client:
+                r = await client.get(
+                    f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}&limit=10"
+                )
+                data = r.json()
+                if not data:
+                    return {"ok": False, "error": "No funding data (spot only?)"}
+
+                latest = data[-1] if data else {}
+                rate = float(latest.get("fundingRate", 0))
+                annual = rate * 3 * 365  # 8h intervals, 3 per day
+
+                history = [{
+                    "rate": round(float(d.get("fundingRate", 0)) * 100, 4),
+                    "time": d.get("fundingTime", 0),
+                } for d in data]
+
+                return {
+                    "ok": True,
+                    "symbol": symbol,
+                    "current_rate": round(rate * 100, 4),
+                    "annual_rate": round(annual * 100, 2),
+                    "sentiment": "bearish (shorts paying)" if rate > 0.01 else "bullish (longs paying)" if rate < -0.01 else "neutral",
+                    "history": history,
+                }
+        except Exception as e:
+            return {"ok": True, "symbol": symbol, "current_rate": 0, "annual_rate": 0,
+                    "sentiment": "unavailable", "history": [], "note": str(e)}
+
     # ── Regime-Adaptive Signal ─────────────────────────────
 
     @app.get("/api/coin/{symbol}/signal-adaptive")

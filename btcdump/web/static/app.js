@@ -765,6 +765,86 @@ async function updateOutcomes() {
     } catch(e) {}
 }
 
+// ── DCA Simulator ──
+async function runDCA() {
+    const el = document.getElementById('dcaResults');
+    el.style.display = '';
+    el.innerHTML = '<div style="padding:10px;color:var(--text-muted)">Simulating DCA...</div>';
+    try {
+        const r = await fetch(`/api/coin/${activeSymbol}/dca-simulate?amount=100&frequency=weekly`);
+        const j = await r.json();
+        if (!j.ok) { el.innerHTML = `<div style="padding:10px;color:var(--red)">${j.error}</div>`; return; }
+
+        const pnlColor = j.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        const dcaVsLump = j.dca_vs_lump >= 0 ? 'var(--green)' : 'var(--red)';
+        el.innerHTML = `
+            <div style="padding:10px 14px">
+                <div class="signal-label" style="margin-bottom:6px">DCA: $${j.amount_per_buy} ${j.frequency} into ${activeSymbol.replace('USDT','')}</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px">
+                    <div class="bt-metric" style="padding:6px"><span class="bt-metric-label">Invested</span><span class="bt-metric-value" style="font-size:13px">$${j.total_invested.toLocaleString()}</span></div>
+                    <div class="bt-metric" style="padding:6px"><span class="bt-metric-label">Current Value</span><span class="bt-metric-value" style="font-size:13px">$${j.current_value.toLocaleString()}</span></div>
+                    <div class="bt-metric" style="padding:6px"><span class="bt-metric-label">P&L</span><span class="bt-metric-value" style="font-size:13px;color:${pnlColor}">${j.pnl >= 0 ? '+' : ''}$${j.pnl.toFixed(0)} (${j.pnl_pct}%)</span></div>
+                    <div class="bt-metric" style="padding:6px"><span class="bt-metric-label">DCA vs Lump</span><span class="bt-metric-value" style="font-size:13px;color:${dcaVsLump}">${j.dca_vs_lump >= 0 ? '+' : ''}${j.dca_vs_lump}%</span></div>
+                </div>
+                <div style="margin-top:6px;font-size:9px;color:var(--text-dim)">
+                    ${j.num_purchases} purchases | Avg price: $${fmtP(j.avg_buy_price)} | Holdings: ${j.total_coins.toFixed(6)} | Lump sum would be: ${j.lump_sum_pnl_pct}%
+                </div>
+            </div>`;
+    } catch(e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">DCA simulation failed</div>'; }
+}
+
+// ── Portfolio Optimizer ──
+async function runPortfolioOptimize() {
+    const el = document.getElementById('optimizerResults');
+    el.style.display = '';
+    el.innerHTML = '<div style="padding:10px;color:var(--text-muted)">Optimizing portfolio (5000 random portfolios)...</div>';
+    try {
+        const r = await fetch('/api/portfolio-optimize');
+        const j = await r.json();
+        if (!j.ok) { el.innerHTML = `<div style="padding:10px;color:var(--red)">${j.error}</div>`; return; }
+
+        const ms = j.max_sharpe;
+        const mv = j.min_volatility;
+        const eq = j.equal_weight;
+
+        let h = `<div style="padding:10px 14px">
+            <div class="signal-label" style="margin-bottom:6px">Optimal Allocation (${j.symbols.length} coins)</div>
+            <table class="comparison-table"><thead><tr><th>Strategy</th><th>Return</th><th>Volatility</th><th>Sharpe</th></tr></thead><tbody>
+                <tr style="background:var(--accent-dim)"><td><strong>Max Sharpe</strong></td><td style="color:var(--green)">${ms.expected_return}%</td><td>${ms.volatility}%</td><td>${ms.sharpe_ratio}</td></tr>
+                <tr><td>Min Volatility</td><td>${mv.expected_return}%</td><td style="color:var(--green)">${mv.volatility}%</td><td>--</td></tr>
+                <tr><td>Equal Weight</td><td>${eq.expected_return}%</td><td>${eq.volatility}%</td><td>${eq.sharpe_ratio}</td></tr>
+            </tbody></table>
+            <div style="margin-top:6px;font-size:10px"><strong>Optimal Weights:</strong> `;
+        for (const [sym, w] of Object.entries(ms.weights)) {
+            if (w > 0.01) h += `<span style="margin-right:8px">${sym.replace('USDT','')}: <strong>${(w * 100).toFixed(1)}%</strong></span>`;
+        }
+        h += '</div></div>';
+        el.innerHTML = h;
+    } catch(e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">Optimization failed</div>'; }
+}
+
+// ── Signal Calibration ──
+async function runCalibration() {
+    const el = document.getElementById('calibrationResults');
+    el.style.display = '';
+    try {
+        const r = await fetch('/api/signal-calibration');
+        const j = await r.json();
+        if (!j.ok) { el.innerHTML = `<div style="padding:10px;color:var(--text-muted)">${j.error}</div>`; return; }
+
+        const scoreColor = j.calibration_score > 70 ? 'var(--green)' : j.calibration_score > 50 ? 'var(--yellow)' : 'var(--red)';
+        let h = `<div style="padding:10px 14px">
+            <div class="signal-label">Signal Calibration <span style="color:${scoreColor};font-size:12px">${j.calibration_score}/100 - ${j.interpretation}</span></div>
+            <table class="comparison-table" style="margin-top:6px"><thead><tr><th>Confidence</th><th>Expected</th><th>Actual</th><th>Gap</th><th>Samples</th><th>Status</th></tr></thead><tbody>`;
+        for (const [k, v] of Object.entries(j.calibration)) {
+            const gapColor = Math.abs(v.gap) < 10 ? 'var(--green)' : Math.abs(v.gap) < 20 ? 'var(--yellow)' : 'var(--red)';
+            h += `<tr><td>${k}%</td><td>${v.expected}%</td><td>${v.actual}%</td><td style="color:${gapColor}">${v.gap > 0 ? '+' : ''}${v.gap}%</td><td>${v.count}</td><td>${v.well_calibrated ? '<span style="color:var(--green)">OK</span>' : '<span style="color:var(--red)">Off</span>'}</td></tr>`;
+        }
+        h += `</tbody></table><div style="margin-top:4px;font-size:9px;color:var(--text-dim)">Analyzed ${j.total_analyzed} resolved signals</div></div>`;
+        el.innerHTML = h;
+    } catch(e) { el.innerHTML = '<div style="padding:10px;color:var(--red)">Calibration failed</div>'; }
+}
+
 // ── Risk Dashboard ──
 async function loadRiskDashboard() {
     try {

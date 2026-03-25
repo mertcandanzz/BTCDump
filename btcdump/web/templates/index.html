@@ -304,6 +304,14 @@
                         Click "Buy" or "Short" to start paper trading with $10,000 virtual balance.
                     </div>
                     <div id="riskDashboard" style="display:none;border-top:1px solid var(--border)"></div>
+                    <div style="border-top:1px solid var(--border);padding:8px 14px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                        <button class="btn btn-sm" onclick="runDCA()">DCA Simulator</button>
+                        <button class="btn btn-sm" onclick="runPortfolioOptimize()">Portfolio Optimizer</button>
+                        <button class="btn btn-sm" onclick="runCalibration()">Signal Calibration</button>
+                    </div>
+                    <div id="dcaResults" style="display:none;font-size:11px"></div>
+                    <div id="optimizerResults" style="display:none;font-size:11px"></div>
+                    <div id="calibrationResults" style="display:none;font-size:11px"></div>
                 </div>
 
                 <!-- History Tab -->
