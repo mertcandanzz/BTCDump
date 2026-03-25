@@ -944,6 +944,327 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
             return {"ok": True, "symbol": symbol, "current_rate": 0, "annual_rate": 0,
                     "sentiment": "unavailable", "history": [], "note": str(e)}
 
+    # ── Signal Consensus Engine ────────────────────────────
+
+    @app.get("/api/coin/{symbol}/consensus")
+    async def signal_consensus(symbol: str):
+        """Master signal synthesizing ALL platform intelligence into one recommendation."""
+        try:
+            def _compute():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+                row = enriched.iloc[-1]
+
+                def _safe(key, default=0):
+                    v = row.get(key, default)
+                    return default if (hasattr(v, '__float__') and v != v) else float(v)
+
+                cached = state.coin_manager.signal_cache.get(symbol, {})
+
+                # ── Component Scores (each -100 to +100, positive=bullish) ──
+                components = {}
+
+                # 1. ML Signal (-100 to +100)
+                direction = cached.get("direction", "HOLD")
+                confidence = cached.get("confidence", 50)
+                ml_score = 0
+                if "STRONG BUY" in direction: ml_score = confidence
+                elif "BUY" in direction: ml_score = confidence * 0.6
+                elif "STRONG SELL" in direction: ml_score = -confidence
+                elif "SELL" in direction: ml_score = -confidence * 0.6
+                components["ml_signal"] = {"score": round(ml_score, 1), "weight": 0.25}
+
+                # 2. Technical Indicators (-100 to +100)
+                tech_score = 0
+                rsi = _safe("RSI", 50)
+                if rsi < 30: tech_score += 30  # oversold = bullish
+                elif rsi > 70: tech_score -= 30
+                else: tech_score += (50 - rsi) * 0.3
+
+                macd = _safe("MACD", 0)
+                macd_sig = _safe("MACD_signal", 0)
+                tech_score += 20 if macd > macd_sig else -20
+
+                adx = _safe("ADX", 20)
+                efficiency = _safe("efficiency_ratio", 0.5)
+                if adx > 25 and efficiency > 0.5:
+                    tech_score *= 1.3  # amplify in trending market
+
+                stoch = _safe("stoch_k", 50)
+                if stoch < 20: tech_score += 15
+                elif stoch > 80: tech_score -= 15
+
+                tech_score = max(-100, min(100, tech_score))
+                components["technical"] = {"score": round(tech_score, 1), "weight": 0.20}
+
+                # 3. Volume Confirmation (-100 to +100)
+                vol_ratio = _safe("volume_ratio", 1)
+                vol_delta = _safe("vol_delta", 0)
+                whale = _safe("whale_score", 0)
+                ofi = _safe("ofi_14", 0)
+                vol_score = ofi * 50 + (vol_delta * 30) + min(20, whale * 10)
+                vol_score *= min(2, vol_ratio)  # amplify by volume
+                vol_score = max(-100, min(100, vol_score))
+                components["volume"] = {"score": round(vol_score, 1), "weight": 0.15}
+
+                # 4. Regime Alignment (-100 to +100)
+                hurst = _safe("hurst_exponent", 0.5)
+                choppiness = _safe("choppiness", 50)
+                regime_score = 0
+                if hurst > 0.55 and efficiency > 0.5:
+                    # Trending - align with trend direction
+                    regime_score = ml_score * 0.5  # amplify ML direction
+                elif hurst < 0.45:
+                    # Mean-reverting - contrarian
+                    regime_score = -ml_score * 0.3  # fade the move
+                components["regime"] = {"score": round(regime_score, 1), "weight": 0.10}
+
+                # 5. Seasonality (-100 to +100)
+                season_hour = _safe("seasonal_hour_bias", 0)
+                season_dow = _safe("seasonal_dow_bias", 0)
+                season_score = (season_hour + season_dow) * 20
+                season_score = max(-100, min(100, season_score))
+                components["seasonality"] = {"score": round(season_score, 1), "weight": 0.05}
+
+                # 6. Market Health (0 to 100, acts as confidence multiplier)
+                entropy = _safe("price_entropy", 1.5)
+                health = max(0, 100 - entropy * 25)
+                components["market_health"] = {"score": round(health, 1), "weight": 0.05}
+
+                # 7. Pattern Recognition (-100 to +100)
+                hammer = _safe("pattern_hammer", 0)
+                star = _safe("pattern_shooting_star", 0)
+                soldiers = _safe("pattern_three_soldiers", 0)
+                crows = _safe("pattern_three_crows", 0)
+                morning = _safe("pattern_morning_star", 0)
+                evening = _safe("pattern_evening_star", 0)
+                engulf = _safe("engulfing_score", 0)
+                pattern_score = (hammer * 40 + soldiers * 60 + morning * 50 + engulf * 30
+                                 - star * 40 - crows * 60 - evening * 50)
+                pattern_score = max(-100, min(100, pattern_score))
+                components["patterns"] = {"score": round(pattern_score, 1), "weight": 0.10}
+
+                # 8. Momentum Quality (-100 to +100)
+                tsi = _safe("tsi", 0)
+                mom_quality = _safe("momentum_quality", 0)
+                kama_slope = _safe("kama_slope", 0)
+                mom_score = tsi * 0.5 + mom_quality * 10 + kama_slope * 20
+                mom_score = max(-100, min(100, mom_score))
+                components["momentum"] = {"score": round(mom_score, 1), "weight": 0.10}
+
+                # ── Weighted Consensus ──
+                consensus = sum(c["score"] * c["weight"] for c in components.values())
+                # Apply health as confidence multiplier
+                health_mult = health / 100 * 0.4 + 0.6  # range 0.6-1.0
+                consensus *= health_mult
+
+                # Map to conviction (0-100 scale)
+                conviction = round(min(100, max(0, 50 + consensus / 2)), 1)
+
+                # Final recommendation
+                if consensus > 40:
+                    action = "STRONG BUY"
+                    emoji = "🟢🟢"
+                elif consensus > 15:
+                    action = "BUY"
+                    emoji = "🟢"
+                elif consensus < -40:
+                    action = "STRONG SELL"
+                    emoji = "🔴🔴"
+                elif consensus < -15:
+                    action = "SELL"
+                    emoji = "🔴"
+                else:
+                    action = "HOLD"
+                    emoji = "🟡"
+
+                return {
+                    "action": action,
+                    "conviction": conviction,
+                    "raw_score": round(consensus, 1),
+                    "components": components,
+                    "health_multiplier": round(health_mult, 3),
+                    "summary": (
+                        f"{emoji} {action} with {conviction:.0f}% conviction. "
+                        f"ML={components['ml_signal']['score']:+.0f}, "
+                        f"Tech={components['technical']['score']:+.0f}, "
+                        f"Vol={components['volume']['score']:+.0f}, "
+                        f"Patterns={components['patterns']['score']:+.0f}. "
+                        f"Health: {health:.0f}/100."
+                    ),
+                }
+
+            result = await asyncio.to_thread(_compute)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Pair Trading Scanner ─────────────────────────────
+
+    @app.get("/api/pair-trading")
+    async def pair_trading():
+        """Find cointegrated/mean-reverting pairs in watchlist for pair trading."""
+        try:
+            def _scan():
+                import pandas as _pdp
+                watchlist = state.coin_manager.watchlist
+                interval = state.coin_manager.active_interval
+                if len(watchlist) < 2:
+                    return []
+
+                prices = {}
+                for sym in watchlist:
+                    try:
+                        data = state.coin_manager.fetcher.fetch_with_cache(sym, interval)
+                        prices[sym] = data.df["close"].tail(200).values
+                    except Exception:
+                        continue
+
+                if len(prices) < 2:
+                    return []
+
+                pairs = []
+                symbols = list(prices.keys())
+                min_len = min(len(v) for v in prices.values())
+
+                for i in range(len(symbols)):
+                    for j in range(i + 1, len(symbols)):
+                        s1, s2 = symbols[i], symbols[j]
+                        p1 = prices[s1][-min_len:]
+                        p2 = prices[s2][-min_len:]
+
+                        # Correlation
+                        corr = float(_pdp.Series(p1).corr(_pdp.Series(p2)))
+
+                        # Spread z-score
+                        ratio = p1 / _np.where(p2 > 0, p2, 1)
+                        ratio_mean = float(_np.mean(ratio))
+                        ratio_std = float(_np.std(ratio))
+                        if ratio_std > 0:
+                            current_z = float((ratio[-1] - ratio_mean) / ratio_std)
+                        else:
+                            current_z = 0
+
+                        # Half-life of mean reversion (simplified)
+                        ratio_series = _pdp.Series(ratio)
+                        lag = ratio_series.shift(1).dropna()
+                        delta = ratio_series.diff().dropna()
+                        if len(lag) > 10 and len(delta) > 10:
+                            # OLS: delta = alpha + beta * lag
+                            beta = float(_np.cov(lag.iloc[1:], delta.iloc[1:])[0][1] / _np.var(lag.iloc[1:]))
+                            half_life = -_np.log(2) / beta if beta < 0 else 999
+                        else:
+                            half_life = 999
+
+                        # Only include pairs with good properties
+                        if abs(corr) > 0.5 and abs(current_z) > 0.5 and half_life < 100:
+                            action = ""
+                            if current_z > 1.5:
+                                action = f"Short {s1.replace('USDT','')}, Long {s2.replace('USDT','')}"
+                            elif current_z < -1.5:
+                                action = f"Long {s1.replace('USDT','')}, Short {s2.replace('USDT','')}"
+                            elif abs(current_z) > 0.5:
+                                action = "Approaching entry zone"
+
+                            pairs.append({
+                                "pair": f"{s1.replace('USDT','')}/{s2.replace('USDT','')}",
+                                "symbol1": s1,
+                                "symbol2": s2,
+                                "correlation": round(corr, 3),
+                                "spread_zscore": round(current_z, 2),
+                                "half_life": round(min(half_life, 999), 1),
+                                "action": action,
+                                "strength": "strong" if abs(current_z) > 2 else "moderate" if abs(current_z) > 1 else "weak",
+                            })
+
+                pairs.sort(key=lambda x: abs(x["spread_zscore"]), reverse=True)
+                return pairs[:10]
+
+            result = await asyncio.to_thread(_scan)
+            return {"ok": True, "pairs": result, "count": len(result)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── What-If Scenario Analysis ────────────────────────
+
+    @app.get("/api/coin/{symbol}/what-if")
+    async def what_if_analysis(symbol: str, price_change_pct: float = -10):
+        """Scenario analysis: what happens to indicators if price moves X%."""
+        try:
+            def _analyze():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+                current = enriched.iloc[-1]
+                price = float(data.df["close"].iloc[-1])
+                new_price = price * (1 + price_change_pct / 100)
+
+                # Simulate indicator changes
+                scenarios = {}
+
+                # RSI impact
+                rsi = float(current.get("RSI", 50))
+                # Rough RSI estimation after move
+                rsi_delta = price_change_pct * 2  # RSI roughly moves 2x the price %
+                new_rsi = max(0, min(100, rsi + rsi_delta))
+                scenarios["rsi"] = {"current": round(rsi, 1), "projected": round(new_rsi, 1),
+                                     "zone": "oversold" if new_rsi < 30 else "overbought" if new_rsi > 70 else "neutral"}
+
+                # Bollinger Band position
+                bb_upper = float(current.get("BB_upper", price * 1.02))
+                bb_lower = float(current.get("BB_lower", price * 0.98))
+                bb_pct = (new_price - bb_lower) / (bb_upper - bb_lower) if bb_upper != bb_lower else 0.5
+                scenarios["bollinger"] = {"current_pct_b": round(float(current.get("bb_pct_b", 0.5)), 3),
+                                           "projected_pct_b": round(bb_pct, 3),
+                                           "status": "above upper" if bb_pct > 1 else "below lower" if bb_pct < 0 else "within bands"}
+
+                # S/R proximity
+                sr = indicators.detect_support_resistance(data.df)
+                nearby_support = [s for s in sr if s["type"] == "support" and s["price"] < new_price]
+                nearby_resist = [s for s in sr if s["type"] == "resistance" and s["price"] > new_price]
+                scenarios["support_resistance"] = {
+                    "nearest_support": round(nearby_support[0]["price"], 6) if nearby_support else None,
+                    "nearest_resistance": round(nearby_resist[0]["price"], 6) if nearby_resist else None,
+                    "support_distance_pct": round((new_price - nearby_support[0]["price"]) / new_price * 100, 2) if nearby_support else None,
+                }
+
+                # Price vs key MAs
+                ma20 = float(current.get("ma20", price))
+                ma50 = float(current.get("ma50", price))
+                scenarios["moving_averages"] = {
+                    "above_ma20": new_price > ma20,
+                    "above_ma50": new_price > ma50,
+                    "ma20_distance_pct": round((new_price - ma20) / ma20 * 100, 2),
+                }
+
+                # Overall assessment
+                if price_change_pct < -5 and new_rsi < 35:
+                    assessment = "Likely oversold bounce opportunity if support holds"
+                elif price_change_pct > 5 and new_rsi > 65:
+                    assessment = "Risk of overbought rejection, consider taking profits"
+                elif price_change_pct < -10:
+                    assessment = "Significant drop - check if support levels hold before entry"
+                elif price_change_pct > 10:
+                    assessment = "Strong rally - momentum may continue but watch for exhaustion"
+                else:
+                    assessment = "Moderate move - monitor key levels for confirmation"
+
+                return {
+                    "current_price": round(price, 6),
+                    "scenario_price": round(new_price, 6),
+                    "price_change_pct": price_change_pct,
+                    "scenarios": scenarios,
+                    "assessment": assessment,
+                }
+
+            result = await asyncio.to_thread(_analyze)
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Volatility Term Structure ──────────────────────────
 
     @app.get("/api/coin/{symbol}/vol-term-structure")

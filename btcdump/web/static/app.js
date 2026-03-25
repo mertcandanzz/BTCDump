@@ -244,6 +244,7 @@ function updateSignalUI(d) {
     loadRegime(d.symbol || activeSymbol);
     loadPredictionRange(d.symbol || activeSymbol);
     loadMarketHealth(d.symbol || activeSymbol);
+    loadConsensus(d.symbol || activeSymbol);
 }
 
 // RSI Semi-circle Gauge
@@ -953,6 +954,31 @@ async function generateNarrative() {
         addDiscMsg('system', '--- End Report ---');
         toast('AI Report generated', 'success');
     } catch(e) { toast('Report failed', 'error'); }
+}
+
+// ── Signal Consensus ──
+async function loadConsensus(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/consensus`);
+        const j = await r.json();
+        if (!j.ok) return;
+        const sec = document.getElementById('consensusSection');
+        sec.style.display = '';
+
+        const score = document.getElementById('consensusScore');
+        const fill = document.getElementById('consensusFill');
+        const action = document.getElementById('consensusAction');
+        const summary = document.getElementById('consensusSummary');
+
+        score.textContent = j.conviction.toFixed(0);
+        const color = j.conviction > 65 ? 'var(--green)' : j.conviction > 45 ? 'var(--yellow)' : 'var(--red)';
+        score.style.color = color;
+        fill.style.width = j.conviction + '%';
+        fill.style.background = color;
+        action.textContent = j.action;
+        action.style.color = j.action.includes('BUY') ? 'var(--green)' : j.action.includes('SELL') ? 'var(--red)' : 'var(--yellow)';
+        summary.textContent = j.summary;
+    } catch(e) {}
 }
 
 // ── Market Health ──

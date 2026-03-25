@@ -192,6 +192,15 @@
                     <div class="signal-label">Reasons</div>
                     <ul id="reasonsContent"></ul>
                 </div>
+                <!-- Consensus Score -->
+                <div class="consensus-section" id="consensusSection" style="display:none">
+                    <div class="consensus-bar">
+                        <div class="consensus-score" id="consensusScore">--</div>
+                        <div class="consensus-fill-wrap"><div class="consensus-fill" id="consensusFill"></div></div>
+                        <div class="consensus-action" id="consensusAction">--</div>
+                    </div>
+                    <div class="consensus-summary" id="consensusSummary"></div>
+                </div>
                 <div style="padding:6px 14px;display:flex;gap:4px">
                     <button class="btn btn-primary" style="flex:1" onclick="generateTradeSetup()">Trade Setup</button>
                     <button class="btn" style="flex:1" onclick="generateNarrative()">AI Report</button>
