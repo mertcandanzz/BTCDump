@@ -105,6 +105,8 @@ class FeatureConfig:
         # v5.0 Pro: Statistical
         "hurst_exponent", "autocorr_1", "autocorr_5",
         "di_ratio", "di_spread", "variance_ratio",
+        # v5.0 Pro: Whale/Smart Money
+        "whale_score", "smart_money_div",
     )
 
 

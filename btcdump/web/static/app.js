@@ -275,6 +275,8 @@ async function loadCandlestickChart(sym){
             const pe=document.getElementById('chartPrice');pe.textContent='$'+fmtP(last.c);pe.className='chart-live-price '+(last.c>=prev.c?'up':'down');
             loadSRLevels(sym);
             loadFibLevels(sym);
+            loadTrendLines(sym);
+            if (sym !== 'BTCUSDT') loadRelativeStrength(sym);
         }
     }catch(e){}
 }
@@ -933,6 +935,33 @@ async function loadSRLevels(sym) {
         const j = await r.json();
         if (j.ok && j.levels?.length) {
             TVChart.setSRLevels(j.levels);
+        }
+    } catch(e) {}
+}
+
+// ── Trend Lines ──
+async function loadTrendLines(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/trend-lines`);
+        const j = await r.json();
+        if (j.ok && j.lines?.length) {
+            TVChart.setTrendLines(j.lines);
+        }
+    } catch(e) {}
+}
+
+// ── Relative Strength vs BTC ──
+async function loadRelativeStrength(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/relative-strength`);
+        const j = await r.json();
+        if (!j.ok) return;
+        // Show RS badge in the price section
+        const badge = document.getElementById('rsBadge');
+        if (badge) {
+            const cls = j.classification.includes('outperform') ? 'up' : j.classification.includes('underperform') ? 'down' : '';
+            badge.innerHTML = `<span class="rs-label">vs BTC</span> <span class="rs-value ${cls}">${j.rs_ratio >= 0 ? '+' : ''}${j.rs_ratio}%</span>`;
+            badge.style.display = '';
         }
     } catch(e) {}
 }

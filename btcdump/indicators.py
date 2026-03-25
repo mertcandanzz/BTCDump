@@ -43,8 +43,10 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _pivot_points(df)
     df = _candlestick_patterns(df)
     df = _microstructure_features(df)
+    df = df.copy()  # defragment mid-pipeline to avoid PerformanceWarning
     df = _statistical_features(df)
-    return df.copy()  # defragment after many column insertions
+    df = _whale_detection(df)
+    return df.copy()  # final defragment
 
 
 # ---------------------------------------------------------------------------
@@ -833,6 +835,156 @@ def _statistical_features(df: pd.DataFrame) -> pd.DataFrame:
     df["variance_ratio"] = (var_q / (q * var_1)).replace([np.inf, -np.inf], np.nan)
 
     return df
+
+
+def _whale_detection(df: pd.DataFrame) -> pd.DataFrame:
+    """Detect whale/smart money activity from volume anomalies.
+
+    Whales leave footprints: massive volume on single candles, volume
+    clusters near key levels, and absorption patterns (high volume, small body).
+    """
+    v = df["volume"]
+    c, o, h, l = df["close"], df["open"], df["high"], df["low"]
+
+    # ── Whale Volume Score ──
+    # Z-score of volume (how many std devs above normal)
+    vol_mean = v.rolling(50, min_periods=10).mean()
+    vol_std = v.rolling(50, min_periods=10).std().replace(0, 1)
+    vol_zscore = (v - vol_mean) / vol_std
+
+    # Whale candle = volume > 3 std AND body is small relative to range (absorption)
+    body_pct = (c - o).abs() / (h - l).replace(0, np.nan)
+    absorption = (vol_zscore > 2) & (body_pct < 0.3)
+
+    # Score: 0 = normal, high = whale-like activity
+    df["whale_score"] = np.where(
+        absorption,
+        vol_zscore * (1 - body_pct),  # high volume + small body = strong whale signal
+        np.where(vol_zscore > 3, vol_zscore * 0.5, 0),  # just high volume = weaker
+    )
+
+    # ── Smart Money Divergence ──
+    # Price makes new low but volume is declining (smart money not selling)
+    # Or price makes new high but volume is declining (distribution)
+    price_new_low = c == c.rolling(20).min()
+    price_new_high = c == c.rolling(20).max()
+    vol_declining = v < v.rolling(10).mean()
+
+    df["smart_money_div"] = np.where(
+        price_new_low & vol_declining, 1.0,   # bullish: low on declining volume
+        np.where(price_new_high & vol_declining, -1.0, 0.0),  # bearish: high on declining vol
+    )
+
+    return df
+
+
+def compute_relative_strength(
+    pair_df: pd.DataFrame, btc_df: pd.DataFrame, window: int = 20,
+) -> dict:
+    """Compute relative strength of a pair vs BTC.
+
+    Returns RS ratio, RS momentum, and classification.
+    """
+    if len(pair_df) < window or len(btc_df) < window:
+        return {"rs_ratio": 1.0, "rs_momentum": 0, "classification": "neutral"}
+
+    pair_ret = pair_df["close"].pct_change().tail(window)
+    btc_ret = btc_df["close"].pct_change().tail(window)
+
+    # Align lengths
+    min_len = min(len(pair_ret), len(btc_ret))
+    pair_ret = pair_ret.tail(min_len).values
+    btc_ret = btc_ret.tail(min_len).values
+
+    # Cumulative returns
+    pair_cum = float(np.prod(1 + pair_ret) - 1) * 100
+    btc_cum = float(np.prod(1 + btc_ret) - 1) * 100
+
+    # RS ratio: pair performance / BTC performance
+    rs_ratio = pair_cum - btc_cum  # relative outperformance in %
+
+    # RS over last 5 vs last 20 (momentum of RS)
+    if min_len >= 5:
+        pair_short = float(np.prod(1 + pair_ret[-5:]) - 1) * 100
+        btc_short = float(np.prod(1 + btc_ret[-5:]) - 1) * 100
+        rs_short = pair_short - btc_short
+        rs_momentum = rs_short - rs_ratio / 4  # acceleration
+    else:
+        rs_momentum = 0
+
+    if rs_ratio > 3:
+        classification = "strong_outperform"
+    elif rs_ratio > 0:
+        classification = "outperform"
+    elif rs_ratio > -3:
+        classification = "underperform"
+    else:
+        classification = "strong_underperform"
+
+    return {
+        "rs_ratio": round(rs_ratio, 2),
+        "rs_momentum": round(rs_momentum, 2),
+        "pair_return": round(pair_cum, 2),
+        "btc_return": round(btc_cum, 2),
+        "classification": classification,
+    }
+
+
+def detect_trend_lines(df: pd.DataFrame, lookback: int = 100) -> list[dict]:
+    """Auto-detect trend lines by connecting swing highs and swing lows.
+
+    Returns lines as [{start_idx, start_price, end_idx, end_price, type, slope}].
+    """
+    if len(df) < lookback:
+        return []
+
+    chunk = df.tail(lookback)
+    highs = chunk["high"].values
+    lows = chunk["low"].values
+    n = len(chunk)
+
+    # Find swing points (local extremes over 5-bar window)
+    swing_highs = []
+    swing_lows = []
+    half = 5
+    for i in range(half, n - half):
+        if highs[i] == max(highs[i - half:i + half + 1]):
+            swing_highs.append((i, float(highs[i])))
+        if lows[i] == min(lows[i - half:i + half + 1]):
+            swing_lows.append((i, float(lows[i])))
+
+    lines = []
+
+    # Resistance line: connect 2 most recent swing highs
+    if len(swing_highs) >= 2:
+        sh = swing_highs[-2:]
+        slope = (sh[1][1] - sh[0][1]) / max(1, sh[1][0] - sh[0][0])
+        # Extend to current bar
+        end_price = sh[1][1] + slope * (n - 1 - sh[1][0])
+        lines.append({
+            "start_idx": sh[0][0],
+            "start_price": round(sh[0][1], 6),
+            "end_idx": n - 1,
+            "end_price": round(end_price, 6),
+            "type": "resistance",
+            "slope_per_bar": round(slope, 6),
+        })
+
+    # Support line: connect 2 most recent swing lows
+    if len(swing_lows) >= 2:
+        sl = swing_lows[-2:]
+        slope = (sl[1][1] - sl[0][1]) / max(1, sl[1][0] - sl[0][0])
+        end_price = sl[1][1] + slope * (n - 1 - sl[1][0])
+        lines.append({
+            "start_idx": sl[0][0],
+            "start_price": round(sl[0][1], 6),
+            "end_idx": n - 1,
+            "end_price": round(end_price, 6),
+            "type": "support",
+            "slope_per_bar": round(slope, 6),
+        })
+
+    return lines
 
 
 def compute_fibonacci_levels(df: pd.DataFrame, lookback: int = 100) -> list[dict]:

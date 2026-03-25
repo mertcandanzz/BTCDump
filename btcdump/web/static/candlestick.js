@@ -20,6 +20,7 @@ const TVChart = (() => {
     let _rulerActive=false, _rulerStart=null, _rulerEnd=null;
     let _srLevels=[]; // support/resistance levels
     let _fibLevels=[]; // fibonacci retracement levels
+    let _trendLines=[]; // auto-detected trend lines
     let _w=0, _h=0, _dpr=1;
     const PAD_R=72, PAD_T=8, PAD_B=26;
 
@@ -30,6 +31,11 @@ const TVChart = (() => {
 
     function setFibLevels(levels) {
         _fibLevels = levels || [];
+        if (_canvas) render();
+    }
+
+    function setTrendLines(lines) {
+        _trendLines = lines || [];
         if (_canvas) render();
     }
 
@@ -220,6 +226,34 @@ const TVChart = (() => {
             });
         }
 
+        // Auto trend lines
+        if (_trendLines.length) {
+            _trendLines.forEach(tl => {
+                // Map indices relative to current view
+                const startI = tl.start_idx - (_allCandles.length - _viewEnd + _viewStart);
+                const endI = tl.end_idx - (_allCandles.length - _viewEnd + _viewStart);
+                if (endI < 0 || startI >= candles.length) return;
+
+                const sx = Math.max(0, startI) * gap + gap / 2;
+                const ex = Math.min(candles.length - 1, endI) * gap + gap / 2;
+                const sp = tl.start_price + tl.slope_per_bar * (Math.max(0, startI) - tl.start_idx + (_allCandles.length - _viewEnd + _viewStart));
+                const ep = tl.end_price;
+
+                if (sp < minP && ep < minP) return;
+                if (sp > maxP && ep > maxP) return;
+
+                const isSup = tl.type === 'support';
+                ctx.setLineDash([8, 4]);
+                ctx.strokeStyle = isSup ? 'rgba(38,166,154,0.7)' : 'rgba(239,83,80,0.7)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.moveTo(sx, py(sp));
+                ctx.lineTo(ex, py(ep));
+                ctx.stroke();
+                ctx.setLineDash([]);
+            });
+        }
+
         // Candles
         candles.forEach((c,i) => {
             const cx = i*gap+gap/2;
@@ -403,7 +437,7 @@ const TVChart = (() => {
     function fmtP(p) { if(p>=10000) return p.toLocaleString(undefined,{maximumFractionDigits:0}); if(p>=1000) return p.toLocaleString(undefined,{maximumFractionDigits:1}); if(p>=1) return p.toFixed(2); if(p>=0.01) return p.toFixed(4); return p.toFixed(6); }
     function fmtVol(v) { if(v>=1e9) return (v/1e9).toFixed(1)+'B'; if(v>=1e6) return (v/1e6).toFixed(1)+'M'; if(v>=1e3) return (v/1e3).toFixed(1)+'K'; return v.toFixed(0); }
 
-    return { init, render, setSRLevels, setFibLevels };
+    return { init, render, setSRLevels, setFibLevels, setTrendLines };
 })();
 
 function drawCandlestick(canvas, candles) {
