@@ -1911,6 +1911,31 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     acceleration = velocity.diff()  # second derivative
     df["price_acceleration"] = acceleration / c.replace(0, np.nan) * 10000  # bps
 
+    # ── Waddah Attar Explosion ──
+    # Crypto-popular: MACD momentum vs BB volatility expansion
+    macd_diff = c.ewm(span=20, adjust=False).mean() - c.ewm(span=40, adjust=False).mean()
+    macd_prev = macd_diff.shift(1)
+    trend_force = (macd_diff - macd_prev).abs()
+    bb_mid = c.rolling(20).mean()
+    bb_std_val = c.rolling(20).std()
+    explosion = bb_std_val * 2  # BB width as volatility threshold
+    # Positive = momentum exceeds volatility (explosive move)
+    df["waddah_explosion"] = (trend_force - explosion) / c.replace(0, np.nan) * 1000
+
+    # ── Squeeze Momentum (LazyBear) ──
+    # Linear regression value of price minus midline during BB squeeze
+    midline = c.rolling(20).mean()
+    deviation = c - midline
+    # Linreg slope of deviation over 20 bars
+    x_vals = np.arange(20, dtype=float)
+    x_mean = x_vals.mean()
+    x_var = ((x_vals - x_mean) ** 2).sum()
+    squeeze_mom = deviation.rolling(20).apply(
+        lambda y: np.sum((x_vals - x_mean) * (y - y.mean())) / x_var if len(y) == 20 else 0,
+        raw=True,
+    )
+    df["squeeze_momentum"] = squeeze_mom / c.replace(0, np.nan) * 100
+
     return df
 
 
