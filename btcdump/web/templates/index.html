@@ -3,12 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BTCDump - All-in-One Signal Engine</title>
+    <meta name="description" content="Professional crypto signal platform with 174 ML features, AI-powered analysis, and real-time trading tools">
+    <meta name="theme-color" content="#0e0e16">
+    <title>BTCDump - Professional Crypto Signal Engine</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://api.binance.com">
 </head>
 <body>
     <!-- Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Global Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display:none">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <div class="loading-text" id="loadingText">Loading...</div>
+            <div class="loading-sub" id="loadingSub"></div>
+        </div>
+    </div>
 
     <!-- Command Palette (Ctrl+K) -->
     <div id="cmdPalette" class="cmd-palette" style="display:none">
@@ -146,7 +158,11 @@
                     </div>
                 </div>
 
-                <div class="indicators-grid">
+                <div class="section-collapsible">
+                <div class="section-header" onclick="toggleSection('indicatorsGrid')">
+                    <span>Indicators</span><span class="section-chevron">&#9660;</span>
+                </div>
+                <div class="indicators-grid" id="indicatorsGrid">
                     <div class="ind-card has-tip" onclick="openVerify('RSI')">
                         <span class="ind-label">RSI <span class="ind-info">?</span></span>
                         <span id="indRSI" class="ind-value">--</span>
@@ -179,6 +195,8 @@
                     </div>
                 </div>
 
+                </div><!-- /section-collapsible indicators -->
+
                 <!-- Multi-Timeframe Analysis -->
                 <div class="mtf-section" id="mtfSection">
                     <div class="signal-label" style="padding:8px 14px 4px;display:flex;justify-content:space-between;align-items:center">
@@ -191,6 +209,11 @@
                 </div>
 
                 <!-- Ensemble Weights with explanations -->
+                <div class="section-collapsible">
+                <div class="section-header" onclick="toggleSection('ensembleInner')">
+                    <span>Ensemble & Reasons</span><span class="section-chevron">&#9660;</span>
+                </div>
+                <div id="ensembleInner">
                 <div class="ensemble-section">
                     <div class="signal-label">Ensemble Weights <span class="ind-info" onclick="toggleEnsembleInfo(event)">?</span></div>
                     <div id="ensembleInfo" class="ensemble-info" style="display:none">
@@ -206,6 +229,9 @@
                     <div class="signal-label">Reasons</div>
                     <ul id="reasonsContent"></ul>
                 </div>
+                </div><!-- /ensembleInner -->
+                </div><!-- /section-collapsible ensemble -->
+
                 <!-- Consensus Score -->
                 <div class="consensus-section" id="consensusSection" style="display:none">
                     <div class="consensus-bar">

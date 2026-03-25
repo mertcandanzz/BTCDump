@@ -40,12 +40,74 @@ function connectWS() {
 }
 
 // ── Toast Notifications ──
+let _toastId = 0;
 function toast(msg, type='info') {
     const c=document.getElementById('toastContainer');
     const t=document.createElement('div');
-    t.className=`toast ${type}`; t.textContent=msg;
+    const id = 'toast-' + (++_toastId);
+    t.id = id;
+    t.className=`toast ${type}`;
+    if (type === 'loading') {
+        t.innerHTML = `<div class="toast-spinner"></div><span>${esc(msg)}</span><button class="toast-close" onclick="dismissToast('${id}')">&times;</button>`;
+    } else {
+        t.textContent=msg;
+        setTimeout(()=>t.remove(), 3000);
+    }
     c.appendChild(t);
-    setTimeout(()=>t.remove(), 3000);
+    return id;
+}
+function dismissToast(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+}
+
+// ── Global Loading Overlay ──
+function showLoading(msg='Loading...') {
+    let overlay = document.getElementById('globalLoadingOverlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'globalLoadingOverlay';
+        overlay.className = 'loading-overlay';
+        overlay.innerHTML = '<div class="loading-spinner"></div><div class="loading-msg"></div>';
+        document.body.appendChild(overlay);
+    }
+    overlay.querySelector('.loading-msg').textContent = msg;
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+}
+function hideLoading() {
+    const overlay = document.getElementById('globalLoadingOverlay');
+    if (overlay) {
+        overlay.classList.remove('visible');
+    }
+}
+
+// ── Section Collapsing ──
+function toggleSection(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isCollapsed = el.classList.toggle('collapsed');
+    // Toggle the header arrow if present
+    const header = el.previousElementSibling;
+    if (header && header.classList.contains('section-header-toggle')) {
+        header.classList.toggle('collapsed', isCollapsed);
+    }
+    // Persist state
+    const key = 'btcdump_section_' + id;
+    localStorage.setItem(key, isCollapsed ? '1' : '0');
+}
+function restoreSectionStates() {
+    ['signalHeroBody','indicatorsGrid','mtfContent','ensembleBody'].forEach(id => {
+        const key = 'btcdump_section_' + id;
+        const val = localStorage.getItem(key);
+        const el = document.getElementById(id);
+        if (val === '1' && el) {
+            el.classList.add('collapsed');
+            const header = el.previousElementSibling;
+            if (header && header.classList.contains('section-header-toggle')) {
+                header.classList.toggle('collapsed', true);
+            }
+        }
+    });
 }
 
 // ── Command Palette (Ctrl+K) ──
@@ -278,7 +340,7 @@ function drawRSIGauge(canvas,value) {
     ctx.beginPath();ctx.arc(nx,ny,4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
 }
 
-async function refreshSignal(){const b=document.getElementById('refreshBtn');b.textContent='...';b.disabled=true;try{const r=await fetch('/api/signal');const j=await r.json();if(j.ok)updateSignalUI(j.data);}catch(e){}b.textContent='Refresh';b.disabled=false;}
+async function refreshSignal(){const b=document.getElementById('refreshBtn');b.textContent='...';b.disabled=true;showLoading('Refreshing signal...');try{const r=await fetch('/api/signal');const j=await r.json();if(j.ok)updateSignalUI(j.data);}catch(e){}hideLoading();b.textContent='Refresh';b.disabled=false;}
 
 // ── Chart ──
 function setChartType(type) {
@@ -289,6 +351,16 @@ function setChartType(type) {
 
 async function loadCandlestickChart(sym){
     sym=sym||activeSymbol;
+    // Show chart loading indicator
+    const chartWrap = document.getElementById('candlestickChart')?.parentElement;
+    let chartLoader = null;
+    if (chartWrap) {
+        if (!chartWrap.style.position || chartWrap.style.position === 'static') chartWrap.style.position = 'relative';
+        chartLoader = document.createElement('div');
+        chartLoader.className = 'chart-loading-indicator';
+        chartLoader.innerHTML = '<div class="loading-spinner"></div><span>Loading chart...</span>';
+        chartWrap.appendChild(chartLoader);
+    }
     try{const r=await fetch(`/api/coin/${sym}/ohlcv?limit=300&chart_type=${chartType}`);const j=await r.json();
         if(j.ok&&j.candles?.length>1){drawCandlestick(document.getElementById('candlestickChart'),j.candles);
             const last=j.candles[j.candles.length-1],prev=j.candles[j.candles.length-2];
@@ -299,6 +371,7 @@ async function loadCandlestickChart(sym){
             if (sym !== 'BTCUSDT') loadRelativeStrength(sym);
         }
     }catch(e){}
+    if (chartLoader) chartLoader.remove();
 }
 window.addEventListener('resize',()=>{if(currentMode==='single')loadCandlestickChart();});
 
@@ -435,7 +508,12 @@ function switchCenterTab(tab) {
     document.querySelectorAll('.center-tab').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(d => d.style.display = 'none');
     document.querySelector(`.center-tab[onclick*="${tab}"]`).classList.add('active');
-    document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = '';
+    const tabEl = document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
+    tabEl.style.display = '';
+    // Smooth fade-in transition
+    tabEl.classList.remove('tab-entering');
+    void tabEl.offsetWidth; // force reflow to restart animation
+    tabEl.classList.add('tab-entering');
     if (tab === 'features') loadFeatureImportance();
     if (tab === 'portfolio') { loadPortfolio(); loadRiskDashboard(); }
     if (tab === 'history') loadSignalHistory();
@@ -463,6 +541,7 @@ function runBacktest() {
     document.getElementById('btMetrics').style.display = 'none';
     document.getElementById('btProgressFill').style.width = '0%';
     document.getElementById('btProgressText').textContent = '0%';
+    showLoading('Running backtest on ' + activeSymbol.replace('USDT','/USDT') + '...');
     ws.send(JSON.stringify({ type: 'run_backtest', symbol: activeSymbol, retrain_every: retrain }));
     toast('Backtest started...', 'info');
 }
@@ -474,6 +553,7 @@ function onBacktestProgress(data) {
 }
 
 function onBacktestComplete(data) {
+    hideLoading();
     document.getElementById('btRunBtn').disabled = false;
     document.getElementById('btProgress').style.display = 'none';
     document.getElementById('btMetrics').style.display = 'flex';
@@ -1294,10 +1374,12 @@ async function runScanner() {
     const resultsEl = document.getElementById('scannerResults');
     statusEl.textContent = 'Scanning top 60 coins...';
     resultsEl.innerHTML = '';
+    showLoading('Scanning market for ' + condition.replace(/_/g,' ') + '...');
 
     try {
         const r = await fetch(`/api/scanner?condition=${condition}&limit=20`);
         const j = await r.json();
+        hideLoading();
         if (!j.ok) { statusEl.textContent = j.error; return; }
 
         statusEl.textContent = `Found ${j.results.length} matches`;
@@ -1324,6 +1406,7 @@ async function runScanner() {
         h += '</tbody></table>';
         resultsEl.innerHTML = h;
     } catch(e) {
+        hideLoading();
         statusEl.textContent = 'Scanner failed';
     }
 }

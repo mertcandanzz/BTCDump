@@ -1,10 +1,24 @@
-/* BTCDump v4.1 - Professional UX Dark Theme */
+/* BTCDump v5.0 - Production-Grade Crypto Trading Platform */
 :root {
     --bg: #0a0a0f; --bg-card: #12121c; --bg-hover: #1a1a28; --bg-input: #0e0e16;
     --border: #222233; --border-light: #333345; --text: #e0e0e8; --text-dim: #7a7a8a; --text-muted: #555568;
     --accent: #00d4aa; --accent-dim: rgba(0,212,170,0.15); --green: #26a69a; --red: #ef5350; --yellow: #f7b924;
     --radius: 8px; --radius-sm: 4px;
     --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    /* v5.0 Production tokens */
+    --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-base: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    --glass-bg: rgba(18, 18, 28, 0.75);
+    --glass-border: rgba(255, 255, 255, 0.06);
+    --gradient-green: linear-gradient(135deg, rgba(38,166,154,0.2) 0%, rgba(38,166,154,0.05) 100%);
+    --gradient-red: linear-gradient(135deg, rgba(239,83,80,0.2) 0%, rgba(239,83,80,0.05) 100%);
+    --gradient-yellow: linear-gradient(135deg, rgba(247,185,36,0.2) 0%, rgba(247,185,36,0.05) 100%);
+    --gradient-accent: linear-gradient(135deg, rgba(0,212,170,0.15) 0%, rgba(0,212,170,0.03) 100%);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3);
+    --shadow-glow-green: 0 0 20px rgba(38,166,154,0.15);
+    --shadow-glow-red: 0 0 20px rgba(239,83,80,0.15);
+    --shadow-glow-accent: 0 0 20px rgba(0,212,170,0.15);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -62,7 +76,23 @@ header{display:flex;align-items:center;padding:6px 14px;background:var(--bg-card
 .btn-ghost{border-color:transparent}.btn-ghost:hover{border-color:var(--border)}
 .btn-sm{padding:3px 8px;font-size:10px}
 .btn-close{background:none;border:none;color:var(--text-dim);font-size:22px;cursor:pointer;line-height:1}
-select{padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text);font-size:11px}
+select{padding:4px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card);color:var(--text);font-size:11px;transition:border-color var(--transition-fast),background var(--transition-fast)}
+
+/* Button States - Production */
+.btn{transition:all var(--transition-fast)}
+.btn:active{transform:scale(0.97);transition-duration:0.05s}
+.btn:disabled,.btn[disabled]{opacity:0.4;cursor:not-allowed;pointer-events:none}
+.btn-primary:active{transform:scale(0.97);box-shadow:0 0 12px rgba(0,212,170,0.3)}
+.btn-primary:disabled{background:var(--accent-dim);border-color:var(--border);color:var(--text-muted)}
+.btn-ghost:active{background:var(--bg-hover)}
+.btn-ghost:disabled{opacity:0.3}
+.btn-close:hover{color:var(--text);transform:scale(1.1)}
+.btn-close:active{transform:scale(0.95)}
+.btn-icon{transition:all var(--transition-fast)}
+.btn-icon:hover{color:var(--accent);background:var(--accent-dim);border-radius:var(--radius-sm)}
+.btn-icon:active{transform:scale(0.9)}
+select:hover{border-color:var(--border-light)}
+select:focus{border-color:var(--accent);outline:none}
 
 /* Ticker Strip */
 #tickerStrip{display:flex;overflow-x:auto;background:var(--bg-card);border-bottom:1px solid var(--border);flex-shrink:0;height:28px;scrollbar-width:none}
@@ -99,6 +129,16 @@ main.dashboard-mode #leftPanel{display:none}
 .conf-bar{flex:1;max-width:120px;height:6px;background:var(--bg);border-radius:3px;overflow:hidden}
 .conf-bar-fill{height:100%;border-radius:3px;transition:width .5s,background .3s}
 .conf-label{font-size:12px;font-weight:700;min-width:36px}
+
+/* Signal Hero - Enhanced Gradients */
+.signal-hero.buy{background:var(--gradient-green);box-shadow:var(--shadow-glow-green)}
+.signal-hero.sell{background:var(--gradient-red);box-shadow:var(--shadow-glow-red)}
+.signal-hero.hold{background:var(--gradient-yellow)}
+.signal-hero.buy .signal-hero-dir{text-shadow:0 0 24px rgba(38,166,154,0.4)}
+.signal-hero.sell .signal-hero-dir{text-shadow:0 0 24px rgba(239,83,80,0.4)}
+.signal-hero.hold .signal-hero-dir{text-shadow:0 0 24px rgba(247,185,36,0.3)}
+.signal-hero::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 50% 0%,rgba(255,255,255,0.03) 0%,transparent 70%);pointer-events:none}
+.signal-hero{position:relative;overflow:hidden}
 
 /* Price Section */
 .price-section{padding:10px 14px;border-bottom:1px solid var(--border)}
@@ -162,6 +202,13 @@ main.dashboard-mode #leftPanel{display:none}
 .center-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 .center-tab:hover:not(.active){color:var(--text);background:var(--bg-hover)}
 .tab-content{flex-shrink:0}
+
+/* Tab Transitions - Fade & Slide */
+.center-tab{position:relative}
+.center-tab::after{content:'';position:absolute;bottom:-2px;left:50%;width:0;height:2px;background:var(--accent);transition:all var(--transition-base);transform:translateX(-50%);border-radius:1px}
+.center-tab.active::after{width:100%}
+.tab-content{animation:tabFadeIn var(--transition-base) ease-out}
+@keyframes tabFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 
 /* ── Backtest UI ── */
 .bt-toolbar{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -279,6 +326,14 @@ main.dashboard-mode #leftPanel{display:none}
 .fc-input input:focus{border-color:var(--accent)}
 .fc-input button{padding:7px 12px;background:var(--accent);border:none;color:#000;border-radius:var(--radius);cursor:pointer;font-size:14px}
 .fc-resize{position:absolute;top:0;left:0;width:10px;height:10px;cursor:nw-resize}
+
+/* Floating Chat - Glassmorphism Enhancement */
+.floating-chat{background:var(--glass-bg);backdrop-filter:blur(16px) saturate(1.4);-webkit-backdrop-filter:blur(16px) saturate(1.4);border:1px solid var(--glass-border);box-shadow:var(--shadow-lg),inset 0 1px 0 rgba(255,255,255,0.04)}
+.fc-header{background:rgba(10,10,15,0.6);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.fc-input{background:rgba(10,10,15,0.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.chat-fab{transition:transform var(--transition-fast),box-shadow var(--transition-fast)}
+.chat-fab:hover{box-shadow:0 6px 24px rgba(0,212,170,0.5),0 0 40px rgba(0,212,170,0.15)}
+.chat-fab:active{transform:scale(0.95)}
 
 /* ── Toast ── */
 .toast-container{position:fixed;top:52px;right:16px;z-index:3000;display:flex;flex-direction:column;gap:6px}
@@ -435,9 +490,58 @@ main.dashboard-mode #leftPanel{display:none}
 .dash-mini-list li{display:flex;justify-content:space-between;padding:2px 0;font-size:10px}
 @media(max-width:900px){.dash-grid{grid-template-columns:1fr}}
 
-/* Scrollbar */
-::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}::-webkit-scrollbar-thumb:hover{background:var(--border-light)}
+/* Dashboard Cards - Enhanced */
+.dash-card{transition:transform var(--transition-fast),box-shadow var(--transition-fast),border-color var(--transition-fast);position:relative}
+.dash-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);border-color:var(--border-light)}
+.dash-card::before{content:'';position:absolute;top:-1px;left:-1px;right:-1px;bottom:-1px;border-radius:calc(var(--radius) + 1px);background:linear-gradient(135deg,rgba(0,212,170,0.12) 0%,rgba(34,34,51,0.3) 50%,rgba(0,212,170,0.06) 100%);z-index:-1;opacity:0;transition:opacity var(--transition-base)}
+.dash-card:hover::before{opacity:1}
+.dash-card-title{transition:color var(--transition-fast)}
+.dash-card:hover .dash-card-title{color:var(--accent)}
+
+/* Scrollbar - Refined */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent;margin:2px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;transition:background 0.2s}
+::-webkit-scrollbar-thumb:hover{background:var(--border-light)}
+::-webkit-scrollbar-thumb:active{background:var(--text-muted)}
+::-webkit-scrollbar-corner{background:transparent}
+*{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+
+/* ── Loading Overlay ── */
+.loading-overlay{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,10,15,0.85);backdrop-filter:blur(6px);opacity:0;transition:opacity .2s ease;pointer-events:none}
+.loading-overlay.visible{opacity:1;pointer-events:all}
+.loading-spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+.loading-msg{margin-top:14px;font-size:13px;color:var(--text);font-weight:600;letter-spacing:0.3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Section Collapsing ── */
+.section-collapsible{overflow:hidden;transition:max-height .35s cubic-bezier(0.4,0,0.2,1),opacity .25s ease;max-height:2000px;opacity:1}
+.section-collapsible.collapsed{max-height:0!important;opacity:0;border-bottom-color:transparent}
+.section-header-toggle{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between}
+.section-header-toggle::after{content:'\25B2';font-size:8px;color:var(--text-dim);transition:transform .3s ease;margin-left:6px;flex-shrink:0}
+.section-header-toggle.collapsed::after{transform:rotate(180deg)}
+
+/* ── Tab Transitions ── */
+.tab-entering{animation:tabFadeIn .2s ease forwards}
+@keyframes tabFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Loading Toast ── */
+.toast.loading{border-color:var(--accent);color:var(--text);display:flex;align-items:center;gap:8px}
+.toast.loading .toast-spinner{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+.toast-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:0 0 0 6px;line-height:1}
+.toast-close:hover{color:var(--text)}
+
+/* ── Chart Loading ── */
+.chart-loading-indicator{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,10,15,0.6);z-index:10;pointer-events:none}
+.chart-loading-indicator .loading-spinner{width:24px;height:24px;border-width:2px}
+.chart-loading-indicator span{margin-left:10px;font-size:12px;color:var(--text-muted);font-weight:600}
+
+/* ── Empty State ── */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;text-align:center;gap:10px}
+.empty-state-icon{font-size:32px;opacity:0.5}
+.empty-state-title{font-size:14px;font-weight:700;color:var(--text)}
+.empty-state-desc{font-size:11px;color:var(--text-muted);max-width:260px;line-height:1.5}
+.empty-state .btn{margin-top:4px}
 
 /* Responsive */
 @media(max-width:900px){
