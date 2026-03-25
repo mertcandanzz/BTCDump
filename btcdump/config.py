@@ -126,6 +126,8 @@ class FeatureConfig:
         "ix_whale_flow", "ix_squeeze_cycle",
         # v5.1 Pro: Jump Detection
         "jump_indicator", "jump_magnitude", "continuous_vol",
+        # v5.1 Pro: Kalman Filter
+        "kalman_residual", "kalman_gain",
     )
 
 

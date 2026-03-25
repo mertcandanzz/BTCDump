@@ -55,6 +55,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _dfa_feature(df)
     df = _interaction_features(df)
     df = _jump_detection(df)
+    df = _kalman_features(df)
     return df.copy()  # final defragment
 
 
@@ -1491,6 +1492,68 @@ def _jump_detection(df: pd.DataFrame) -> pd.DataFrame:
 
     # Continuous volatility (BV-based, cleaner than RV)
     df["continuous_vol"] = np.sqrt(bv / window).fillna(0)
+
+    return df
+
+
+def _kalman_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Kalman Filter: optimal Bayesian price estimate from noisy observations.
+
+    The Kalman filter models price as a hidden state with process noise
+    (real price movement) and observation noise (market microstructure).
+    Provides a smoothed "true" price estimate and a prediction error signal.
+
+    Features:
+    - kalman_residual: price - kalman estimate (positive = overpriced)
+    - kalman_gain: current filter gain (low = confident in estimate)
+    """
+    prices = df["close"].values.astype(float)
+    n = len(prices)
+
+    # State: [price, velocity]
+    # Transition: price(t) = price(t-1) + velocity(t-1)
+    #             velocity(t) = velocity(t-1)
+
+    # Initialize
+    x = np.array([prices[0], 0.0])  # [price, velocity]
+    P = np.array([[1.0, 0.0], [0.0, 1.0]])  # covariance
+
+    # Process noise (how much true price changes per step)
+    Q = np.array([[0.001, 0.0], [0.0, 0.0001]])
+    # Measurement noise (market microstructure noise)
+    R = np.array([[0.01]])
+    # Transition matrix
+    F = np.array([[1.0, 1.0], [0.0, 1.0]])
+    # Measurement matrix
+    H = np.array([[1.0, 0.0]])
+
+    kalman_prices = np.zeros(n)
+    kalman_gains = np.zeros(n)
+    kalman_residuals = np.zeros(n)
+
+    for i in range(n):
+        # Predict
+        x_pred = F @ x
+        P_pred = F @ P @ F.T + Q
+
+        # Update
+        z = prices[i]
+        y = z - (H @ x_pred)[0]  # innovation (residual)
+        S = (H @ P_pred @ H.T + R)[0, 0]  # innovation covariance
+        K = (P_pred @ H.T) / max(S, 1e-10)  # Kalman gain
+
+        x = x_pred + K.flatten() * y
+        P = (np.eye(2) - K @ H) @ P_pred
+
+        kalman_prices[i] = x[0]
+        kalman_gains[i] = float(K[0, 0])
+
+        # Normalize residual by price
+        if prices[i] > 0:
+            kalman_residuals[i] = y / prices[i] * 100  # as %
+
+    df["kalman_residual"] = kalman_residuals
+    df["kalman_gain"] = kalman_gains
 
     return df
 
