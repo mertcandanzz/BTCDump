@@ -1775,6 +1775,15 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["natr"] = (h - l).rolling(14).mean() / c.replace(0, np.nan) * 100
 
+    # ── Feature #150: Trend Persistence Score ──
+    # Composite: how persistent and strong is the current trend?
+    ema_align = np.sign(c.ewm(span=9).mean() - c.ewm(span=21).mean())
+    adx_val = df.get("ADX", pd.Series(25, index=df.index)).fillna(25) / 100
+    hurst_val = df.get("hurst_exponent", pd.Series(0.5, index=df.index)).fillna(0.5)
+    consec = df.get("consecutive_dir", pd.Series(0, index=df.index)).fillna(0)
+    consec_norm = (consec / 5).clip(-1, 1)
+    df["trend_persistence"] = (ema_align * adx_val + hurst_val - 0.5 + consec_norm * 0.3).clip(-1, 1)
+
     return df
 
 
