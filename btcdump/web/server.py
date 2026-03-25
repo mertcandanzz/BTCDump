@@ -667,6 +667,76 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Correlation Breakdown Detection ─────────────────────
+
+    @app.get("/api/correlation-breakdown")
+    async def correlation_breakdown():
+        """Detect pairs where correlation has broken down from historical norm."""
+        try:
+            def _detect():
+                import pandas as _pdd
+                interval = state.coin_manager.active_interval
+                watchlist = state.coin_manager.watchlist
+                if len(watchlist) < 2:
+                    return []
+
+                # Get returns for all watchlist coins
+                returns_map = {}
+                for sym in watchlist:
+                    try:
+                        data = state.coin_manager.fetcher.fetch_with_cache(sym, interval)
+                        returns_map[sym] = data.df["close"].pct_change().dropna()
+                    except Exception:
+                        continue
+
+                if len(returns_map) < 2:
+                    return []
+
+                breakdowns = []
+                symbols = list(returns_map.keys())
+
+                for i in range(len(symbols)):
+                    for j in range(i + 1, len(symbols)):
+                        s1, s2 = symbols[i], symbols[j]
+                        r1, r2 = returns_map[s1], returns_map[s2]
+
+                        # Align
+                        min_len = min(len(r1), len(r2))
+                        if min_len < 50:
+                            continue
+                        r1 = r1.tail(min_len).values
+                        r2 = r2.tail(min_len).values
+
+                        # Long-term correlation (full history)
+                        long_corr = float(_pdd.Series(r1).corr(_pdd.Series(r2)))
+                        # Short-term correlation (last 20 bars)
+                        short_corr = float(_pdd.Series(r1[-20:]).corr(_pdd.Series(r2[-20:])))
+
+                        # Breakdown = big difference between long and short term
+                        diff = abs(long_corr - short_corr)
+                        if diff > 0.3 and abs(long_corr) > 0.4:
+                            breakdowns.append({
+                                "pair": f"{s1.replace('USDT','')}-{s2.replace('USDT','')}",
+                                "symbol1": s1,
+                                "symbol2": s2,
+                                "long_term_corr": round(long_corr, 3),
+                                "short_term_corr": round(short_corr, 3),
+                                "divergence": round(diff, 3),
+                                "interpretation": (
+                                    f"Normally {'positively' if long_corr > 0 else 'negatively'} correlated "
+                                    f"({long_corr:.2f}), now {'decorrelating' if abs(short_corr) < abs(long_corr) * 0.5 else 'shifting'}. "
+                                    f"Watch for mean-reversion or regime change."
+                                ),
+                            })
+
+                breakdowns.sort(key=lambda x: x["divergence"], reverse=True)
+                return breakdowns[:5]
+
+            result = await asyncio.to_thread(_detect)
+            return {"ok": True, "breakdowns": result, "count": len(result)}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Seasonality Profile ────────────────────────────────
 
     @app.get("/api/coin/{symbol}/seasonality")
