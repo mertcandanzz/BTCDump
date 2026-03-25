@@ -212,6 +212,66 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Dynamic SL/TP Calculator ─────────────────────────
+
+    @app.get("/api/coin/{symbol}/sl-tp")
+    async def get_sl_tp(symbol: str, atr_mult_sl: float = 1.5, atr_mult_tp: float = 2.5):
+        """Calculate dynamic stop-loss and take-profit levels."""
+        try:
+            def _calc():
+                from btcdump import indicators as ind
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = ind.compute_all(data.df.copy(), state.config.indicators)
+                row = enriched.iloc[-1]
+                price = float(data.df["close"].iloc[-1])
+                atr = float(row.get("ATR", 0))
+                rsi = float(row.get("RSI", 50))
+
+                # Determine bias from cached signal
+                cached = state.coin_manager.signal_cache.get(symbol, {})
+                direction = cached.get("direction", "HOLD")
+                is_long = "BUY" in direction
+
+                if is_long:
+                    sl = price - atr * atr_mult_sl
+                    tp = price + atr * atr_mult_tp
+                else:
+                    sl = price + atr * atr_mult_sl
+                    tp = price - atr * atr_mult_tp
+
+                # Also get S/R levels for context
+                sr = ind.detect_support_resistance(data.df)
+                nearest_support = next(
+                    (s["price"] for s in sr if s["type"] == "support" and s["price"] < price), None,
+                )
+                nearest_resistance = next(
+                    (s["price"] for s in sr if s["type"] == "resistance" and s["price"] > price), None,
+                )
+
+                rr = abs(tp - price) / abs(price - sl) if abs(price - sl) > 0 else 0
+
+                return {
+                    "price": round(price, 6),
+                    "atr": round(atr, 6),
+                    "direction": direction,
+                    "stop_loss": round(sl, 6),
+                    "take_profit": round(tp, 6),
+                    "sl_distance_pct": round(abs(price - sl) / price * 100, 2),
+                    "tp_distance_pct": round(abs(tp - price) / price * 100, 2),
+                    "risk_reward": round(rr, 2),
+                    "nearest_support": round(nearest_support, 6) if nearest_support else None,
+                    "nearest_resistance": round(nearest_resistance, 6) if nearest_resistance else None,
+                    "atr_mult_sl": atr_mult_sl,
+                    "atr_mult_tp": atr_mult_tp,
+                }
+
+            result = await asyncio.to_thread(_calc)
+            return {"ok": True, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Correlation Matrix ──────────────────────────────────
 
     @app.get("/api/correlation")

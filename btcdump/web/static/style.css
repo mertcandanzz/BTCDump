@@ -305,6 +305,21 @@ main.collapsed #leftPanel{display:none}
 .toggle-switch::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--text-dim);transition:all .2s}
 .toggle-switch.active{background:var(--accent)}.toggle-switch.active::after{left:16px;background:#fff}
 
+/* ── SL/TP Section ── */
+.sltp-section{padding:6px 14px;border-bottom:1px solid var(--border)}
+.sltp-row{display:flex;gap:8px;align-items:center}
+.sltp-item{flex:1;text-align:center;padding:4px 0;border-radius:var(--radius-sm)}
+.sltp-item.tp{background:rgba(38,166,154,0.08)}
+.sltp-item.sl{background:rgba(239,83,80,0.08)}
+.sltp-item.rr{background:var(--bg)}
+.sltp-label{display:block;font-size:8px;text-transform:uppercase;font-weight:700;letter-spacing:.5px}
+.sltp-item.tp .sltp-label{color:var(--green)}.sltp-item.sl .sltp-label{color:var(--red)}.sltp-item.rr .sltp-label{color:var(--text-muted)}
+.sltp-price{display:block;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.sltp-item.tp .sltp-price{color:var(--green)}.sltp-item.sl .sltp-price{color:var(--red)}
+.sltp-pct{font-size:9px;color:var(--text-dim)}
+.sltp-val{display:block;font-size:14px;font-weight:800;color:var(--accent)}
+.sltp-sr{font-size:9px;color:var(--text-muted);margin-top:4px;text-align:center}
+
 /* ── Multi-Timeframe Panel ── */
 .mtf-section{border-bottom:1px solid var(--border)}
 .mtf-grid{padding:0 10px 8px}

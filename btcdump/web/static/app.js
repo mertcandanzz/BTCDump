@@ -236,6 +236,7 @@ function updateSignalUI(d) {
     (d.reasons||[]).forEach(r=>{const li=document.createElement('li');li.textContent=r;rE.appendChild(li);});
     document.getElementById('lastUpdated').textContent='Updated '+new Date().toLocaleTimeString();
     updateFcContext();
+    loadSLTP(d.symbol || activeSymbol);
 }
 
 // RSI Semi-circle Gauge
@@ -582,6 +583,28 @@ async function loadPortfolio() {
             <button class="btn btn-sm btn-ghost" onclick="fetch('/api/paper/reset',{method:'POST'});setTimeout(loadPortfolio,300)">Reset</button>
         </div>`;
         el.innerHTML = h;
+    } catch(e) {}
+}
+
+// ── SL/TP Calculator ──
+async function loadSLTP(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/sl-tp`);
+        const j = await r.json();
+        if (!j.ok) return;
+        const sec = document.getElementById('sltpSection');
+        sec.style.display = '';
+        document.getElementById('sltpTP').textContent = '$' + fmtP(j.take_profit);
+        document.getElementById('sltpSL').textContent = '$' + fmtP(j.stop_loss);
+        document.getElementById('sltpTPpct').textContent = '+' + j.tp_distance_pct + '%';
+        document.getElementById('sltpSLpct').textContent = '-' + j.sl_distance_pct + '%';
+        document.getElementById('sltpRR').textContent = j.risk_reward.toFixed(1);
+        // S/R context
+        let sr = '';
+        if (j.nearest_support) sr += `S: $${fmtP(j.nearest_support)}`;
+        if (j.nearest_resistance) sr += `${sr ? ' | ' : ''}R: $${fmtP(j.nearest_resistance)}`;
+        if (sr) sr = `Nearest S/R: ${sr}`;
+        document.getElementById('sltpSR').textContent = sr;
     } catch(e) {}
 }
 
