@@ -57,6 +57,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _jump_detection(df)
     df = _kalman_features(df)
     df = _ou_features(df)
+    df = _final_features(df)
     return df.copy()  # final defragment
 
 
@@ -1557,6 +1558,34 @@ def _kalman_features(df: pd.DataFrame) -> pd.DataFrame:
 
     df["kalman_residual"] = kalman_residuals
     df["kalman_gain"] = kalman_gains
+
+    return df
+
+
+def _final_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Final precision features: GK volatility, RVI, volume-weighted momentum."""
+    c, o, h, l, v = df["close"], df["open"], df["high"], df["low"], df["volume"]
+
+    # ── Garman-Klass Volatility (best single OHLC estimator) ──
+    # GK = 0.5 * ln(H/L)^2 - (2*ln(2)-1) * ln(C/O)^2
+    log_hl = np.log(h / l.replace(0, np.nan)) ** 2
+    log_co = np.log(c / o.replace(0, np.nan)) ** 2
+    gk_var = 0.5 * log_hl - (2 * np.log(2) - 1) * log_co
+    df["garman_klass_vol"] = np.sqrt(gk_var.rolling(20).mean().clip(lower=0))
+
+    # ── Relative Vigor Index (RVI) ──
+    # Measures conviction: close-open relative to high-low range
+    numerator = ((c - o) + 2 * (c.shift(1) - o.shift(1)) + 2 * (c.shift(2) - o.shift(2)) + (c.shift(3) - o.shift(3))) / 6
+    denominator = ((h - l) + 2 * (h.shift(1) - l.shift(1)) + 2 * (h.shift(2) - l.shift(2)) + (h.shift(3) - l.shift(3))) / 6
+    df["rvi"] = (numerator / denominator.replace(0, np.nan)).rolling(10).mean()
+
+    # ── Volume-Weighted Momentum ──
+    # Momentum where each bar's return is weighted by its relative volume
+    ret = c.pct_change()
+    vol_weight = v / v.rolling(20, min_periods=1).mean().replace(0, np.nan)
+    weighted_ret = ret * vol_weight
+    df["vw_momentum_10"] = weighted_ret.rolling(10).sum()
+    df["vw_momentum_20"] = weighted_ret.rolling(20).sum()
 
     return df
 

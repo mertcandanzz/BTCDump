@@ -130,6 +130,8 @@ class FeatureConfig:
         "kalman_residual", "kalman_gain",
         # v5.1 Pro: Ornstein-Uhlenbeck
         "ou_theta", "ou_distance",
+        # v5.1 Pro: Precision Features
+        "garman_klass_vol", "rvi", "vw_momentum_10", "vw_momentum_20",
     )
 
 
