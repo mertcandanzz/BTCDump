@@ -131,6 +131,76 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    @app.get("/api/coin/{symbol}/signal-quick")
+    async def get_quick_signal(symbol: str):
+        """Fast signal using only basic indicators (no ML training). Returns in <2s."""
+        try:
+            def _quick():
+                data = state.coin_manager.fetcher.fetch_with_cache(symbol, state.coin_manager.active_interval)
+                # Only compute basic indicators for speed (skip advanced features)
+                from btcdump.indicators import (
+                    _moving_averages, _rsi, _macd, _bollinger_bands, _atr,
+                    _stochastic, _adx, _volume_features,
+                )
+                ic = state.config.indicators
+                df = data.df.copy()
+                df = _moving_averages(df, ic.ma_periods)
+                df = _rsi(df, ic.rsi_period)
+                df = _macd(df, ic.macd_fast, ic.macd_slow, ic.macd_signal)
+                df = _bollinger_bands(df, ic.bb_period, ic.bb_std)
+                df = _atr(df, ic.atr_period)
+                df = _stochastic(df, ic.stoch_k_period, ic.stoch_d_period)
+                df = _adx(df, ic.adx_period)
+                df = _volume_features(df)
+                enriched = df
+                row = enriched.iloc[-1]
+                price = float(data.df["close"].iloc[-1])
+
+                # Simple indicator-based signal (no ML)
+                rsi = float(row.get("RSI", 50))
+                macd = float(row.get("MACD", 0))
+                macd_sig = float(row.get("MACD_signal", 0))
+                adx = float(row.get("ADX", 25))
+                stoch = float(row.get("stoch_k", 50))
+
+                score = 0
+                reasons = []
+                if rsi < 30: score += 2; reasons.append(f"RSI oversold ({rsi:.0f})")
+                elif rsi > 70: score -= 2; reasons.append(f"RSI overbought ({rsi:.0f})")
+                if macd > macd_sig: score += 1; reasons.append("MACD bullish")
+                else: score -= 1; reasons.append("MACD bearish")
+                if stoch < 20: score += 1; reasons.append("Stoch oversold")
+                elif stoch > 80: score -= 1; reasons.append("Stoch overbought")
+                if adx > 25:
+                    reasons.append(f"ADX trending ({adx:.0f})")
+
+                if score >= 3: direction = "STRONG BUY"
+                elif score >= 1: direction = "BUY"
+                elif score <= -3: direction = "STRONG SELL"
+                elif score <= -1: direction = "SELL"
+                else: direction = "HOLD"
+
+                return {
+                    "symbol": symbol, "current_price": price,
+                    "direction": direction, "confidence": min(100, abs(score) * 20 + 30),
+                    "rsi": round(rsi, 1), "adx": round(adx, 1),
+                    "macd_bullish": macd > macd_sig, "stoch_k": round(stoch, 1),
+                    "reasons": reasons, "status": "ready", "source": "indicators_only",
+                    "predicted_price": price, "change_pct": 0,
+                    "model_agreement": 0, "indicator_confluence": abs(score),
+                    "risk_reward": 0, "volume_ratio": round(float(row.get("volume_ratio", 1)), 2),
+                    "atr": round(float(row.get("ATR", 0)), 2),
+                    "mape": 0, "weights": {}, "interval": state.coin_manager.active_interval,
+                }
+
+            data = await asyncio.to_thread(_quick)
+            # Cache it so dashboard can use it
+            state.coin_manager.signal_cache[symbol] = data
+            state.coin_manager.active_signal_data = data
+            return {"ok": True, "data": data, "status": "ready"}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     @app.get("/api/coin/{symbol}/signal")
     async def get_coin_signal(symbol: str):
         try:

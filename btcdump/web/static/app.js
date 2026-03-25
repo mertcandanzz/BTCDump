@@ -70,17 +70,17 @@ async function onCmdSearch(q) {
 
 // ── Keyboard Shortcuts ──
 document.addEventListener('keydown', e => {
+    // Ctrl+K: command palette (safe, doesn't conflict)
     if(e.ctrlKey && e.key==='k') { e.preventDefault(); openCmdPalette(); }
     if(e.key==='Escape') { closeCmdPalette(); closeSettings(); }
-    if(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT') return;
-    if(e.key==='d'&&!e.shiftKey) switchMode('dashboard');
-    if(e.key==='s'&&!e.shiftKey) switchMode('single');
-    if(e.key==='c'&&!e.shiftKey) switchMode('compare');
-    if(e.key==='r'||e.key==='R') refreshSignal();
-    if(e.key==='b'||e.key==='B') { paperTrade('long'); toast('Quick BUY (B key)','info'); }
-    if(e.key==='S'&&e.shiftKey) { paperTrade('short'); toast('Quick SHORT (Shift+S)','info'); }
-    if(e.key==='x'||e.key==='X') { paperClose(activeSymbol); setTimeout(loadPortfolio,500); toast('Close position (X key)','info'); }
-    if(e.key==='t'||e.key==='T') generateTradeSetup();
+    // Skip ALL shortcuts if: typing in input, or Ctrl/Alt/Meta held (browser shortcuts)
+    if(document.activeElement.tagName==='INPUT'||document.activeElement.tagName==='SELECT'||document.activeElement.tagName==='TEXTAREA') return;
+    if(e.ctrlKey || e.altKey || e.metaKey) return;
+    // Mode shortcuts: Alt not needed, but only fire on exact single key
+    if(e.key==='F1') { e.preventDefault(); switchMode('dashboard'); }
+    if(e.key==='F2') { e.preventDefault(); switchMode('single'); }
+    if(e.key==='F3') { e.preventDefault(); switchMode('compare'); }
+    if(e.key==='r') refreshSignal();
 });
 
 // ── Mode Switch ──
@@ -1596,13 +1596,29 @@ async function loadDashboard() {
 
 // ── Dashboard Actions ──
 async function dashboardComputeSignal() {
-    toast('Computing BTC signal (may take 30-60s for first train)...', 'info');
+    const btn = event?.target;
+    if (btn) { btn.disabled = true; btn.textContent = 'Computing... please wait'; }
+    toast('Computing BTC signal (first time includes model training, ~2-3 min)...', 'info');
+    try {
+        // Try quick signal first (no training)
+        const qr = await fetch(`/api/coin/BTCUSDT/signal-quick`, {signal: AbortSignal.timeout(10000)}).catch(() => null);
+        if (qr?.ok) {
+            const qj = await qr.json();
+            if (qj.ok && qj.data?.current_price) {
+                toast('Quick signal ready! (no ML, indicators only)', 'success');
+                loadDashboard();
+                if (btn) { btn.disabled = false; btn.textContent = 'Compute Full ML Signal'; }
+            }
+        }
+    } catch(e) {}
+    // Then do full ML signal (may take long)
     try {
         const r = await fetch(`/api/coin/BTCUSDT/signal`);
         const j = await r.json();
-        if (j.ok) { toast('BTC signal ready!', 'success'); loadDashboard(); }
+        if (j.ok) { toast('Full ML signal ready!', 'success'); loadDashboard(); }
         else toast(j.error || 'Failed', 'error');
-    } catch(e) { toast('Signal computation failed', 'error'); }
+    } catch(e) { toast('Signal computation timed out - try refreshing', 'error'); }
+    if (btn) { btn.disabled = false; btn.textContent = 'Compute BTC Signal'; }
 }
 
 async function dashboardRefreshSignals() {
@@ -1626,6 +1642,6 @@ async function init(){
     try{const r=await fetch('/api/signal/cached');const j=await r.json();if(j.ok&&j.data?.current_price)updateSignalUI(j.data);}catch(e){}
     await syncWL(); loadTickerStrip(); loadCandlestickChart(); updateFcContext(); connectWS();
     loadFearGreed(); loadCustomPresets(); checkAnomalies();
-    addDiscMsg('system','BTCDump v5.1 | D:dashboard S:analysis C:compare | Ctrl+K:search R:refresh B:buy Shift+S:short X:close T:setup');
+    addDiscMsg('system','BTCDump v5.1 | F1:dashboard F2:analysis F3:compare | Ctrl+K:search R:refresh');
 }
 init();
