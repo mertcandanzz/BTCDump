@@ -1891,6 +1891,26 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
             md.iloc[i] = float(c.iloc[i])
     df["mcginley_dist"] = (c - md) / c.replace(0, np.nan) * 100
 
+    # ── Heikin-Ashi Smoothed Features ──
+    ha_close = (o + h + l + c) / 4
+    ha_open = o.copy()
+    for i in range(1, len(df)):
+        ha_open.iloc[i] = (ha_open.iloc[i-1] + ha_close.iloc[i-1]) / 2
+    ha_body = ha_close - ha_open
+    ha_range = (h - l).replace(0, np.nan)
+    # HA body ratio: 1 = full body (strong trend), 0 = doji
+    df["ha_body_ratio"] = ha_body.abs() / ha_range
+    # HA trend: consecutive HA bullish/bearish candles
+    ha_dir = np.sign(ha_body)
+    ha_groups = (ha_dir != ha_dir.shift()).cumsum()
+    df["ha_trend_strength"] = ha_dir * ha_dir.groupby(ha_groups).cumcount().add(1) / 5
+
+    # ── Price Acceleration ──
+    # Second derivative: rate of change of momentum
+    velocity = c.diff()           # first derivative (speed)
+    acceleration = velocity.diff()  # second derivative
+    df["price_acceleration"] = acceleration / c.replace(0, np.nan) * 10000  # bps
+
     return df
 
 

@@ -146,6 +146,7 @@ class FeatureConfig:
         "trix", "balance_of_power",
         "ppo", "ppo_hist", "vwap_zscore",
         "mcginley_dist",
+        "ha_body_ratio", "ha_trend_strength", "price_acceleration",
     )
 
 
