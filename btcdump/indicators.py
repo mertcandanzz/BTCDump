@@ -1784,6 +1784,52 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     consec_norm = (consec / 5).clip(-1, 1)
     df["trend_persistence"] = (ema_align * adx_val + hurst_val - 0.5 + consec_norm * 0.3).clip(-1, 1)
 
+    # ── Parabolic SAR Direction ──
+    # +1 = SAR below price (uptrend), -1 = SAR above (downtrend)
+    af_start, af_step, af_max = 0.02, 0.02, 0.20
+    sar = np.zeros(len(df))
+    direction_sar = np.ones(len(df))
+    if len(df) > 2:
+        sar[0] = float(l.iloc[0])
+        ep = float(h.iloc[0])
+        af = af_start
+        trend = 1
+        for i in range(1, len(df)):
+            sar[i] = sar[i-1] + af * (ep - sar[i-1])
+            if trend == 1:
+                if float(l.iloc[i]) < sar[i]:
+                    trend = -1
+                    sar[i] = ep
+                    ep = float(l.iloc[i])
+                    af = af_start
+                else:
+                    if float(h.iloc[i]) > ep:
+                        ep = float(h.iloc[i])
+                        af = min(af + af_step, af_max)
+            else:
+                if float(h.iloc[i]) > sar[i]:
+                    trend = 1
+                    sar[i] = ep
+                    ep = float(h.iloc[i])
+                    af = af_start
+                else:
+                    if float(l.iloc[i]) < ep:
+                        ep = float(l.iloc[i])
+                        af = min(af + af_step, af_max)
+            direction_sar[i] = trend
+    df["psar_dir"] = direction_sar
+
+    # ── Chaikin Oscillator ──
+    # EMA(3) - EMA(10) of Accumulation/Distribution Line
+    ad_line = df.get("ad_line", pd.Series(0, index=df.index))
+    if ad_line.sum() == 0:
+        mf_mult = ((c - l) - (h - c)) / (h - l).replace(0, np.nan)
+        ad_line = (mf_mult.fillna(0) * v).cumsum()
+    df["chaikin_osc"] = ad_line.ewm(span=3).mean() - ad_line.ewm(span=10).mean()
+    # Normalize
+    ad_std = df["chaikin_osc"].rolling(50, min_periods=1).std().replace(0, 1)
+    df["chaikin_osc"] = df["chaikin_osc"] / ad_std
+
     return df
 
 

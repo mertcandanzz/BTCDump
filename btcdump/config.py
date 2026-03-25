@@ -141,6 +141,7 @@ class FeatureConfig:
         "schaff_tc", "coppock_curve",
         "kst", "ease_of_movement", "natr",
         "trend_persistence",
+        "psar_dir", "chaikin_osc",
     )
 
 
