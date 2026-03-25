@@ -10,7 +10,7 @@ let ws=null, providerStatus={}, currentStreamBuffers={};
 let currentMode='single', activeSymbol='BTCUSDT', signalFilter='all';
 let watchlist=JSON.parse(localStorage.getItem('btcdump_wl'))||['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT'];
 let watchlistData={}, sortCol='quoteVolume', sortDir='desc', expandedRow=null;
-let fcOpen=false, autoRefreshId=null, autoRefreshSec=0;
+let fcOpen=false, autoRefreshId=null, autoRefreshSec=0, chartType='candlestick';
 
 // ── WebSocket ──
 function connectWS() {
@@ -273,9 +273,15 @@ function drawRSIGauge(canvas,value) {
 async function refreshSignal(){const b=document.getElementById('refreshBtn');b.textContent='...';b.disabled=true;try{const r=await fetch('/api/signal');const j=await r.json();if(j.ok)updateSignalUI(j.data);}catch(e){}b.textContent='Refresh';b.disabled=false;}
 
 // ── Chart ──
+function setChartType(type) {
+    chartType = type;
+    document.querySelectorAll('.chart-type-btn').forEach(b => b.classList.toggle('active', b.textContent.trim() === (type === 'candlestick' ? 'C' : 'HA')));
+    loadCandlestickChart();
+}
+
 async function loadCandlestickChart(sym){
     sym=sym||activeSymbol;
-    try{const r=await fetch(`/api/coin/${sym}/ohlcv?limit=300`);const j=await r.json();
+    try{const r=await fetch(`/api/coin/${sym}/ohlcv?limit=300&chart_type=${chartType}`);const j=await r.json();
         if(j.ok&&j.candles?.length>1){drawCandlestick(document.getElementById('candlestickChart'),j.candles);
             const last=j.candles[j.candles.length-1],prev=j.candles[j.candles.length-2];
             const pe=document.getElementById('chartPrice');pe.textContent='$'+fmtP(last.c);pe.className='chart-live-price '+(last.c>=prev.c?'up':'down');

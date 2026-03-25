@@ -239,6 +239,10 @@
                         <div class="chart-header">
                             <span id="chartTitle" class="chart-title">BTC/USDT</span>
                             <span id="chartPrice" class="chart-live-price"></span>
+                            <div class="chart-type-toggle">
+                                <button class="chart-type-btn active" onclick="setChartType('candlestick')" title="Candlestick">C</button>
+                                <button class="chart-type-btn" onclick="setChartType('heikin_ashi')" title="Heikin-Ashi">HA</button>
+                            </div>
                             <span id="lastUpdated" class="chart-updated"></span>
                         </div>
                         <canvas id="candlestickChart" class="candlestick-canvas"></canvas>

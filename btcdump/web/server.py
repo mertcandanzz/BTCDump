@@ -109,13 +109,30 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
             return {"ok": False, "error": str(e)}
 
     @app.get("/api/coin/{symbol}/ohlcv")
-    async def get_ohlcv(symbol: str, limit: int = 100):
-        """Full OHLCV data for candlestick chart."""
+    async def get_ohlcv(symbol: str, limit: int = 100, chart_type: str = "candlestick"):
+        """Full OHLCV data for candlestick chart. chart_type: candlestick or heikin_ashi."""
         try:
             def _fetch():
                 interval = state.coin_manager.active_interval
                 data = state.coin_manager.fetcher.fetch_with_cache(symbol, interval)
-                df = data.df.tail(limit)
+                df = data.df.tail(limit + 1)  # +1 for HA calculation
+
+                if chart_type == "heikin_ashi":
+                    # Heikin-Ashi transformation
+                    ha_close = (df["open"] + df["high"] + df["low"] + df["close"]) / 4
+                    ha_open = df["open"].copy()
+                    for i in range(1, len(df)):
+                        ha_open.iloc[i] = (ha_open.iloc[i-1] + ha_close.iloc[i-1]) / 2
+                    ha_high = df[["high"]].join(ha_open.rename("ha_o")).join(ha_close.rename("ha_c")).max(axis=1)
+                    ha_low = df[["low"]].join(ha_open.rename("ha_o")).join(ha_close.rename("ha_c")).min(axis=1)
+
+                    df = df.copy()
+                    df["open"] = ha_open
+                    df["high"] = ha_high
+                    df["low"] = ha_low
+                    df["close"] = ha_close
+
+                df = df.tail(limit)
                 return [{
                     "t": int(r["time"].timestamp() * 1000),
                     "o": round(float(r["open"]), 6),
@@ -125,7 +142,7 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
                     "v": round(float(r["volume"]), 2),
                 } for _, r in df.iterrows()]
             candles = await asyncio.to_thread(_fetch)
-            return {"ok": True, "candles": candles, "symbol": symbol}
+            return {"ok": True, "candles": candles, "symbol": symbol, "chart_type": chart_type}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
