@@ -1830,6 +1830,23 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     ad_std = df["chaikin_osc"].rolling(50, min_periods=1).std().replace(0, 1)
     df["chaikin_osc"] = df["chaikin_osc"] / ad_std
 
+    # ── Donchian Channel Position ──
+    # Turtle Trading: where price sits within 20-period high/low channel
+    # 0 = at low (breakout down), 1 = at high (breakout up)
+    dc_high = h.rolling(20).max()
+    dc_low = l.rolling(20).min()
+    dc_range = (dc_high - dc_low).replace(0, np.nan)
+    df["donchian_pos"] = (c - dc_low) / dc_range
+
+    # ── Stochastic RSI ──
+    # Apply Stochastic formula to RSI instead of price - more sensitive
+    rsi_col = df.get("RSI", pd.Series(50, index=df.index))
+    stoch_period = 14
+    rsi_low = rsi_col.rolling(stoch_period).min()
+    rsi_high = rsi_col.rolling(stoch_period).max()
+    rsi_range = (rsi_high - rsi_low).replace(0, np.nan)
+    df["stoch_rsi"] = ((rsi_col - rsi_low) / rsi_range * 100).fillna(50)
+
     return df
 
 

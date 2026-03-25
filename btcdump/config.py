@@ -142,6 +142,7 @@ class FeatureConfig:
         "kst", "ease_of_movement", "natr",
         "trend_persistence",
         "psar_dir", "chaikin_osc",
+        "donchian_pos", "stoch_rsi",
     )
 
 
