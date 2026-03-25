@@ -181,6 +181,9 @@
                     <div class="signal-label">Reasons</div>
                     <ul id="reasonsContent"></ul>
                 </div>
+                <div style="padding:6px 14px">
+                    <button class="btn btn-primary" style="width:100%" onclick="generateTradeSetup()">Generate Trade Setup</button>
+                </div>
             </div>
 
             <!-- Compare Mode -->
@@ -270,12 +273,22 @@
 
                 <!-- History Tab -->
                 <div id="tabHistory" class="tab-content" style="display:none">
-                    <div style="padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)">
+                    <div style="padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);flex-wrap:wrap">
                         <button class="btn btn-primary btn-sm" onclick="loadSignalHistory()">Load History</button>
                         <button class="btn btn-sm" onclick="updateOutcomes()">Update Outcomes</button>
+                        <button class="btn btn-sm btn-ghost" onclick="window.open('/api/export/signal-history','_blank')">Export CSV</button>
                         <span id="historyStats" class="panel-hint"></span>
                     </div>
                     <div id="historyContent" style="overflow:auto;font-size:11px"></div>
+                </div>
+
+                <!-- Trade Setup (floating panel, toggled) -->
+                <div id="tradeSetupPanel" class="trade-setup-panel" style="display:none">
+                    <div class="ts-header">
+                        <span class="ts-title">Trade Setup</span>
+                        <button class="btn-close" onclick="document.getElementById('tradeSetupPanel').style.display='none'">&times;</button>
+                    </div>
+                    <div id="tradeSetupContent"></div>
                 </div>
 
                 <!-- Discussion (always below tabs) -->

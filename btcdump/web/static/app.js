@@ -651,6 +651,65 @@ async function updateOutcomes() {
     } catch(e) {}
 }
 
+// ── Trade Setup Generator ──
+async function generateTradeSetup() {
+    const panel = document.getElementById('tradeSetupPanel');
+    const content = document.getElementById('tradeSetupContent');
+    panel.style.display = '';
+    content.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted)">Generating trade setup...</div>';
+
+    try {
+        const r = await fetch(`/api/coin/${activeSymbol}/trade-setup?capital=10000&risk_pct=1`);
+        const j = await r.json();
+        if (!j.ok || j.action === 'NO TRADE') {
+            content.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted)">${j.reason || j.error || 'No trade setup available'}</div>`;
+            return;
+        }
+
+        const isLong = j.action.includes('LONG');
+        const gradeColor = {A:'var(--green)',B:'var(--yellow)',C:'#ff9800',D:'var(--red)'}[j.grade] || 'var(--text-dim)';
+
+        let h = `<div class="ts-action ${isLong ? 'long' : 'short'}">
+            ${j.action} <span class="ts-grade ${j.grade}">${j.grade}</span>
+            <span style="font-size:10px;margin-left:8px;color:var(--text-dim)">${j.regime} | R/R ${j.rr_ratio}:1</span>
+        </div>`;
+
+        h += `<div class="ts-levels">
+            <div class="ts-level entry"><span class="ts-level-label">Entry</span><span class="ts-level-price">$${fmtP(j.entry)}</span></div>
+            <div class="ts-level sl"><span class="ts-level-label">Stop Loss</span><span class="ts-level-price" style="color:var(--red)">$${fmtP(j.stop_loss)}</span><span style="font-size:9px;color:var(--text-dim)">-${j.sl_distance_pct}%</span></div>
+            <div class="ts-level tp"><span class="ts-level-label">TP1 (1R)</span><span class="ts-level-price" style="color:var(--green)">$${fmtP(j.tp1)}</span></div>
+            <div class="ts-level tp"><span class="ts-level-label">TP2 (2R)</span><span class="ts-level-price" style="color:var(--green)">$${fmtP(j.tp2)}</span></div>
+            <div class="ts-level tp"><span class="ts-level-label">TP3 (3R)</span><span class="ts-level-price" style="color:var(--green)">$${fmtP(j.tp3)}</span></div>
+            <div class="ts-level entry"><span class="ts-level-label">Position</span><span class="ts-level-price">${j.position_size.toFixed(4)}</span><span style="font-size:9px;color:var(--text-dim)">$${j.position_value.toFixed(0)} | ${j.leverage.toFixed(1)}x</span></div>
+        </div>`;
+
+        // Checklist
+        h += '<div class="ts-checks">';
+        j.checklist.forEach(c => {
+            h += `<div class="ts-check">
+                <span class="ts-check-icon">${c.pass ? '<span style="color:var(--green)">&#10003;</span>' : '<span style="color:var(--red)">&#10007;</span>'}</span>
+                <span>${c.item}</span>
+                <span style="margin-left:auto;font-weight:600;color:${c.pass ? 'var(--green)' : 'var(--red)'}">${c.value}</span>
+            </div>`;
+        });
+        h += '</div>';
+
+        // S/R + Fib context
+        let ctx = [];
+        if (j.nearest_support) ctx.push(`S: $${fmtP(j.nearest_support)}`);
+        if (j.nearest_resistance) ctx.push(`R: $${fmtP(j.nearest_resistance)}`);
+        if (j.fibonacci?.length) ctx.push(`Fib: ${j.fibonacci.map(f => f.name).join(', ')}`);
+        if (ctx.length) h += `<div style="padding:4px 14px;font-size:9px;color:var(--text-dim)">${ctx.join(' | ')}</div>`;
+
+        h += `<div class="ts-notes">${j.notes}</div>`;
+        h += `<div style="padding:6px 14px;font-size:9px;color:var(--text-muted);text-align:center">Risk: $${j.risk_amount} (1% of $10,000) | ATR: $${fmtP(j.atr)}</div>`;
+
+        content.innerHTML = h;
+    } catch(e) {
+        content.innerHTML = '<div style="padding:20px;text-align:center;color:var(--red)">Failed to generate setup</div>';
+    }
+}
+
 // ── SL/TP Calculator ──
 async function loadSLTP(sym) {
     try {

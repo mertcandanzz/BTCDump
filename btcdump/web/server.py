@@ -217,6 +217,154 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Trade Setup Generator ──────────────────────────────
+
+    @app.get("/api/coin/{symbol}/trade-setup")
+    async def get_trade_setup(symbol: str, capital: float = 10000, risk_pct: float = 1.0):
+        """Generate a complete actionable trade setup."""
+        try:
+            def _generate():
+                from btcdump import indicators as ind
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                enriched = ind.compute_all(data.df.copy(), state.config.indicators)
+                row = enriched.iloc[-1]
+                price = float(data.df["close"].iloc[-1])
+                atr = float(row.get("ATR", 0))
+
+                cached = state.coin_manager.signal_cache.get(symbol, {})
+                direction = cached.get("direction", "HOLD")
+                confidence = cached.get("confidence", 0)
+                rsi = float(row.get("RSI", 50))
+
+                is_long = "BUY" in direction
+                is_short = "SELL" in direction
+
+                if not atr or direction == "HOLD":
+                    return {"action": "NO TRADE", "reason": "Signal is HOLD or insufficient data"}
+
+                # Dynamic SL/TP based on ATR and regime
+                efficiency = float(row.get("efficiency_ratio", 0.5))
+                # Tighter stops in choppy markets, wider in trending
+                sl_mult = 1.0 + efficiency  # 1.0-2.0x ATR
+                tp_mult = sl_mult * 2.0     # Always 2:1 minimum R/R
+
+                if is_long:
+                    entry = price
+                    sl = price - atr * sl_mult
+                    tp1 = price + atr * tp_mult * 0.5   # Partial TP at 1R
+                    tp2 = price + atr * tp_mult          # Full TP at 2R
+                    tp3 = price + atr * tp_mult * 1.5    # Runner at 3R
+                else:
+                    entry = price
+                    sl = price + atr * sl_mult
+                    tp1 = price - atr * tp_mult * 0.5
+                    tp2 = price - atr * tp_mult
+                    tp3 = price - atr * tp_mult * 1.5
+
+                # Position sizing (risk-based)
+                risk_amount = capital * (risk_pct / 100)
+                sl_distance = abs(entry - sl)
+                position_size = risk_amount / sl_distance if sl_distance > 0 else 0
+                position_value = position_size * entry
+                leverage_needed = position_value / capital if capital > 0 else 0
+
+                # S/R levels for context
+                sr = ind.detect_support_resistance(data.df)
+                supports = [s for s in sr if s["type"] == "support" and s["price"] < price]
+                resistances = [s for s in sr if s["type"] == "resistance" and s["price"] > price]
+
+                # Fibonacci
+                fibs = ind.compute_fibonacci_levels(data.df)
+                nearest_fibs = sorted(fibs, key=lambda f: abs(f["distance_pct"]))[:3]
+
+                # Checklist
+                checks = []
+                if confidence >= 60:
+                    checks.append({"item": "ML Confidence > 60%", "pass": True, "value": f"{confidence:.0f}%"})
+                else:
+                    checks.append({"item": "ML Confidence > 60%", "pass": False, "value": f"{confidence:.0f}%"})
+
+                agreement = cached.get("model_agreement", 0) * 100
+                checks.append({"item": "Model Agreement > 70%", "pass": agreement > 70, "value": f"{agreement:.0f}%"})
+
+                vol_ratio = float(row.get("volume_ratio", 1))
+                checks.append({"item": "Volume Confirmation > 1x", "pass": vol_ratio > 1, "value": f"{vol_ratio:.1f}x"})
+
+                adx = float(row.get("ADX", 0))
+                checks.append({"item": "Trend Strength (ADX > 20)", "pass": adx > 20, "value": f"{adx:.0f}"})
+
+                rsi_ok = (is_long and rsi < 70) or (is_short and rsi > 30)
+                checks.append({"item": "RSI Not Extreme", "pass": rsi_ok, "value": f"{rsi:.0f}"})
+
+                passed = sum(1 for c in checks if c["pass"])
+                grade = "A" if passed >= 4 else "B" if passed >= 3 else "C" if passed >= 2 else "D"
+
+                return {
+                    "action": f"{'LONG' if is_long else 'SHORT'} {symbol.replace('USDT','/USDT')}",
+                    "direction": direction,
+                    "grade": grade,
+                    "confidence": round(confidence, 1),
+                    "entry": round(entry, 6),
+                    "stop_loss": round(sl, 6),
+                    "tp1": round(tp1, 6),
+                    "tp2": round(tp2, 6),
+                    "tp3": round(tp3, 6),
+                    "sl_distance_pct": round(sl_distance / entry * 100, 2),
+                    "rr_ratio": round(abs(tp2 - entry) / sl_distance, 1) if sl_distance > 0 else 0,
+                    "position_size": round(position_size, 6),
+                    "position_value": round(position_value, 2),
+                    "risk_amount": round(risk_amount, 2),
+                    "leverage": round(leverage_needed, 1),
+                    "atr": round(atr, 6),
+                    "regime": "trending" if efficiency > 0.5 else "choppy",
+                    "nearest_support": round(supports[0]["price"], 6) if supports else None,
+                    "nearest_resistance": round(resistances[0]["price"], 6) if resistances else None,
+                    "fibonacci": nearest_fibs,
+                    "checklist": checks,
+                    "notes": (
+                        f"{'Trending' if efficiency > 0.5 else 'Choppy'} market (ER={efficiency:.2f}). "
+                        f"ATR=${atr:.2f}. RSI={rsi:.0f}. "
+                        f"{'Strong volume' if vol_ratio > 1.5 else 'Normal volume' if vol_ratio > 0.8 else 'Low volume'}."
+                    ),
+                }
+
+            result = await asyncio.to_thread(_generate)
+            return {"ok": True, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── CSV Export ───────────────────────────────────────
+
+    @app.get("/api/export/paper-trades")
+    async def export_paper_trades():
+        """Export paper trading history as CSV."""
+        from starlette.responses import Response
+        trades = state.paper_trader.get_history()
+        if not trades:
+            return {"ok": False, "error": "No trades to export"}
+        header = "symbol,side,entry_price,exit_price,pnl,pnl_pct,entry_time,exit_time\n"
+        rows = [f"{t['symbol']},{t['side']},{t['entry']},{t['exit']},{t['pnl']},{t['pnl_pct']},{t['entry_time']},{t['exit_time']}" for t in trades]
+        csv = header + "\n".join(rows)
+        return Response(content=csv, media_type="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=paper_trades.csv"})
+
+    @app.get("/api/export/signal-history")
+    async def export_signal_history():
+        """Export signal history as CSV."""
+        from starlette.responses import Response
+        records = state.signal_history.get_history(limit=500)
+        if not records:
+            return {"ok": False, "error": "No history to export"}
+        header = "timestamp,symbol,direction,confidence,price,predicted_price,change_pct,rsi,outcome,price_1h,price_4h,price_24h\n"
+        rows = []
+        for r in records:
+            rows.append(f"{r.get('timestamp','')},{r.get('symbol','')},{r.get('direction','')},{r.get('confidence',0)},{r.get('price_at_signal',0)},{r.get('predicted_price',0)},{r.get('predicted_change_pct',0)},{r.get('rsi',0)},{r.get('outcome','')},{r.get('price_after_1h','')},{r.get('price_after_4h','')},{r.get('price_after_24h','')}")
+        csv = header + "\n".join(rows)
+        return Response(content=csv, media_type="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=signal_history.csv"})
+
     # ── Signal Leaderboard ────────────────────────────────
 
     @app.get("/api/leaderboard")

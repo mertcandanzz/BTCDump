@@ -361,6 +361,26 @@ main.collapsed #leftPanel{display:none}
 .anomaly-badge{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:var(--radius-sm);background:rgba(239,83,80,0.15);color:var(--red);font-size:9px;font-weight:600;animation:anomalyPulse 2s infinite}
 @keyframes anomalyPulse{0%,100%{opacity:1}50%{opacity:0.6}}
 
+/* ── Trade Setup Panel ── */
+.trade-setup-panel{border:1px solid var(--accent);border-radius:var(--radius);margin:8px;background:var(--bg-card);overflow:hidden}
+.ts-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--accent-dim);border-bottom:1px solid var(--accent)}
+.ts-title{font-size:12px;font-weight:700;color:var(--accent)}
+.ts-action{font-size:16px;font-weight:900;padding:8px 14px;text-align:center}
+.ts-action.long{color:var(--green);background:rgba(38,166,154,0.08)}
+.ts-action.short{color:var(--red);background:rgba(239,83,80,0.08)}
+.ts-grade{display:inline-block;width:22px;height:22px;border-radius:50%;text-align:center;line-height:22px;font-size:11px;font-weight:800;margin-left:8px}
+.ts-grade.A{background:var(--green);color:#000}.ts-grade.B{background:var(--yellow);color:#000}
+.ts-grade.C{background:#ff9800;color:#000}.ts-grade.D{background:var(--red);color:#fff}
+.ts-levels{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;padding:6px 14px;font-size:10px}
+.ts-level{text-align:center;padding:4px;border-radius:var(--radius-sm)}
+.ts-level.entry{background:var(--bg)}.ts-level.sl{background:rgba(239,83,80,0.08)}.ts-level.tp{background:rgba(38,166,154,0.08)}
+.ts-level-label{display:block;font-size:8px;text-transform:uppercase;font-weight:700;color:var(--text-muted)}
+.ts-level-price{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.ts-checks{padding:6px 14px;font-size:10px}
+.ts-check{display:flex;align-items:center;gap:4px;padding:2px 0}
+.ts-check-icon{font-size:12px}
+.ts-notes{padding:6px 14px;font-size:10px;color:var(--text-dim);border-top:1px solid var(--border)}
+
 /* Scrollbar */
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}::-webkit-scrollbar-thumb:hover{background:var(--border-light)}
