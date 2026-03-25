@@ -1936,6 +1936,20 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["squeeze_momentum"] = squeeze_mom / c.replace(0, np.nan) * 100
 
+    # ── Choppiness-Adjusted Momentum ──
+    # Momentum scaled by trend clarity: strong in trends, zero in chop
+    raw_mom = c.pct_change(10) * 100
+    chop = df.get("choppiness", pd.Series(50, index=df.index)).fillna(50)
+    trend_factor = ((61.8 - chop) / 61.8).clip(0, 1)  # 0 at chop>61.8, 1 at chop=0
+    df["chop_adj_momentum"] = raw_mom * trend_factor
+
+    # ── Volume-Price Confirmation ──
+    # Correlation between price direction and volume over 10 bars
+    # High = volume confirms price moves, Low = divergence
+    price_dir = np.sign(c.diff())
+    vol_change = v.diff()
+    df["vol_price_confirm"] = price_dir.rolling(10).corr(vol_change)
+
     return df
 
 

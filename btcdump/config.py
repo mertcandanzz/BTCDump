@@ -148,6 +148,7 @@ class FeatureConfig:
         "mcginley_dist",
         "ha_body_ratio", "ha_trend_strength", "price_acceleration",
         "waddah_explosion", "squeeze_momentum",
+        "chop_adj_momentum", "vol_price_confirm",
     )
 
 
