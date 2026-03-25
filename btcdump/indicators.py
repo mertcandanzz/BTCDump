@@ -42,6 +42,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _volume_profile(df)
     df = _pivot_points(df)
     df = _candlestick_patterns(df)
+    df = _microstructure_features(df)
     return df
 
 
@@ -719,6 +720,55 @@ def _candlestick_patterns(df: pd.DataFrame) -> pd.DataFrame:
     # ── Evening Star: bullish + doji/small + bearish (reversal) ──
     evening = (body.shift(2) > 0) & (body_abs.shift(1) < body_abs.shift(2) * 0.3) & (body < 0) & (c < (o.shift(2) + c.shift(2)) / 2)
     df["pattern_evening_star"] = np.where(evening, body_abs / full_range, 0.0)
+
+    return df
+
+
+def _microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Market microstructure features from OHLCV data.
+
+    These capture institutional vs retail behavior patterns.
+    """
+    c, o, h, l, v = df["close"], df["open"], df["high"], df["low"], df["volume"]
+
+    # ── Trade Intensity: volume per unit price move ──
+    # High intensity = lots of volume for small move (absorption/institutional)
+    price_move = (c - o).abs()
+    df["trade_intensity"] = v / price_move.replace(0, np.nan)
+    # Normalize to rolling z-score
+    ti = df["trade_intensity"]
+    ti_mean = ti.rolling(20, min_periods=1).mean()
+    ti_std = ti.rolling(20, min_periods=1).std().replace(0, 1)
+    df["trade_intensity"] = (ti - ti_mean) / ti_std
+
+    # ── Pin Bar Detection (quantified) ──
+    # Pin bar = wick > 60% of range on one side, body < 30% of range
+    body_pct = (c - o).abs() / (h - l).replace(0, np.nan)
+    upper_pct = (h - pd.concat([c, o], axis=1).max(axis=1)) / (h - l).replace(0, np.nan)
+    lower_pct = (pd.concat([c, o], axis=1).min(axis=1) - l) / (h - l).replace(0, np.nan)
+
+    # Bullish pin: long lower wick, body < 30%
+    bull_pin = (lower_pct > 0.6) & (body_pct < 0.3)
+    # Bearish pin: long upper wick, body < 30%
+    bear_pin = (upper_pct > 0.6) & (body_pct < 0.3)
+    df["pin_bar_score"] = np.where(bull_pin, lower_pct, np.where(bear_pin, -upper_pct, 0))
+
+    # ── Gap Detection (crypto "gaps" = significant open vs prev close) ──
+    gap = (o - c.shift(1)) / c.shift(1).replace(0, np.nan) * 100
+    df["gap_pct"] = gap
+
+    # ── Intrabar Volatility Ratio ──
+    # How much price moved relative to the body direction
+    # High ratio = lots of intrabar reversals (choppy)
+    total_move = h - l
+    directional_move = (c - o).abs()
+    df["intrabar_vol_ratio"] = total_move / directional_move.replace(0, np.nan)
+
+    # ── Relative Close Position (where did it close in the bar range) ──
+    # 0 = at low, 0.5 = middle, 1 = at high
+    # Rolling average tells about persistent buying/selling pressure
+    close_pos = (c - l) / (h - l).replace(0, np.nan)
+    df["close_position_avg"] = close_pos.rolling(5).mean()
 
     return df
 

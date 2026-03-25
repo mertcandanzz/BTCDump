@@ -99,6 +99,9 @@ class FeatureConfig:
         "pattern_doji", "pattern_hammer", "pattern_shooting_star",
         "pattern_three_soldiers", "pattern_three_crows",
         "pattern_morning_star", "pattern_evening_star",
+        # v5.0 Pro: Microstructure
+        "trade_intensity", "pin_bar_score", "gap_pct",
+        "intrabar_vol_ratio", "close_position_avg",
     )
 
 
