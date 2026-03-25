@@ -270,6 +270,19 @@
                         <span class="panel-hint">RSI, MACD, Bollinger, EMA, Ichimoku on last 200 candles</span>
                     </div>
                     <div id="strategyCompareResults" style="font-size:11px"></div>
+                    <div style="border-top:1px solid var(--border);padding:8px 14px;display:flex;gap:6px;align-items:center">
+                        <button class="btn btn-sm" onclick="runMonteCarlo()">Monte Carlo</button>
+                        <button class="btn btn-sm" onclick="loadSeasonality()">Seasonality</button>
+                        <span class="panel-hint">Advanced analysis tools</span>
+                    </div>
+                    <div id="monteCarloResults" style="display:none">
+                        <div id="monteCarloStats" style="padding:6px 14px;font-size:10px"></div>
+                        <canvas id="monteCarloCanvas" style="width:100%;height:200px"></canvas>
+                    </div>
+                    <div id="seasonalityResults" style="display:none">
+                        <canvas id="seasonalHourCanvas" style="width:100%;height:160px"></canvas>
+                        <canvas id="seasonalDayCanvas" style="width:100%;height:120px"></canvas>
+                    </div>
                 </div>
 
                 <!-- Features Tab -->

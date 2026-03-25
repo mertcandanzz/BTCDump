@@ -162,6 +162,139 @@ function drawCoinHeatmap(canvas, coins) {
     });
 }
 
+// ── Monte Carlo Paths ──
+function drawMonteCarlo(canvas, paths, percentiles) {
+    if (!paths || !paths.length) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#0e0e16'; ctx.fillRect(0, 0, w, h);
+
+    const padL = 55, padR = 10, padT = 10, padB = 24;
+    const cw = w - padL - padR, ch = h - padT - padB;
+
+    // Find min/max across all paths
+    let minV = Infinity, maxV = -Infinity;
+    paths.forEach(p => p.forEach(v => { if (v < minV) minV = v; if (v > maxV) maxV = v; }));
+    const pad = (maxV - minV) * 0.05;
+    minV -= pad; maxV += pad;
+    const rangeV = maxV - minV || 1;
+    const steps = paths[0].length;
+    const stepX = cw / (steps - 1);
+
+    const vy = v => padT + ch - ((v - minV) / rangeV) * ch;
+
+    // Grid
+    ctx.strokeStyle = '#1c1c2e'; ctx.lineWidth = 0.5;
+    ctx.font = '9px -apple-system,sans-serif'; ctx.fillStyle = '#6b6b80'; ctx.textAlign = 'right';
+    for (let i = 0; i <= 4; i++) {
+        const v = minV + rangeV * i / 4;
+        const y = vy(v);
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+        ctx.fillText('$' + v.toFixed(0), padL - 4, y + 3);
+    }
+
+    // Draw all sample paths (faint)
+    paths.forEach(path => {
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(100,100,150,0.15)';
+        ctx.lineWidth = 1;
+        path.forEach((v, i) => {
+            const x = padL + i * stepX, y = vy(v);
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+    });
+
+    // Starting balance line
+    const startY = vy(paths[0][0]);
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, startY); ctx.lineTo(w - padR, startY); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Percentile labels on right
+    if (percentiles) {
+        const labels = [
+            { key: 'p95', color: '#26a69a', label: 'P95' },
+            { key: 'p50', color: '#f7b924', label: 'P50' },
+            { key: 'p5', color: '#ef5350', label: 'P5' },
+        ];
+        labels.forEach(({ key, color, label }) => {
+            const val = percentiles[key];
+            if (val == null) return;
+            const y = vy(val);
+            ctx.fillStyle = color;
+            ctx.font = 'bold 10px -apple-system,sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${label}: $${val.toFixed(0)}`, w - padR - 4, y - 3);
+            ctx.beginPath();
+            ctx.setLineDash([2, 3]);
+            ctx.strokeStyle = color; ctx.lineWidth = 1;
+            ctx.moveTo(padL, y); ctx.lineTo(w - padR, y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        });
+    }
+}
+
+// ── Seasonality Bar Chart ──
+function drawSeasonalityChart(canvas, data, type) {
+    // data: {key: {avg_return, win_rate, count}, ...}
+    if (!data || !Object.keys(data).length) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#0e0e16'; ctx.fillRect(0, 0, w, h);
+
+    const keys = Object.keys(data);
+    const values = keys.map(k => data[k].avg_return);
+    const maxAbs = Math.max(...values.map(Math.abs)) || 0.01;
+
+    const padL = 30, padR = 10, padT = 12, padB = 20;
+    const barW = (w - padL - padR) / keys.length;
+    const midY = padT + (h - padT - padB) / 2;
+
+    // Zero line
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, midY); ctx.lineTo(w - padR, midY); ctx.stroke();
+
+    keys.forEach((key, i) => {
+        const val = data[key].avg_return;
+        const x = padL + i * barW;
+        const barH = (val / maxAbs) * ((h - padT - padB) / 2 - 4);
+        const y = val >= 0 ? midY - barH : midY;
+        const color = val >= 0 ? '#26a69a' : '#ef5350';
+
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.7;
+        ctx.fillRect(x + 2, y, barW - 4, Math.abs(barH));
+        ctx.globalAlpha = 1;
+
+        // Label
+        ctx.fillStyle = '#9b9bb0';
+        ctx.font = '8px -apple-system,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(type === 'hourly' ? `${key}h` : key, x + barW / 2, h - 6);
+
+        // Value on top
+        ctx.fillStyle = color;
+        ctx.font = '7px -apple-system,sans-serif';
+        const textY = val >= 0 ? y - 2 : y + Math.abs(barH) + 8;
+        ctx.fillText(`${val >= 0 ? '+' : ''}${val.toFixed(3)}%`, x + barW / 2, textY);
+    });
+
+    // Title
+    ctx.fillStyle = '#6b6b80';
+    ctx.font = '10px -apple-system,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(type === 'hourly' ? 'Avg Return by Hour' : 'Avg Return by Day', padL, padT);
+}
+
 // ── Correlation Heatmap ──
 function drawCorrelationHeatmap(canvas, matrix, symbols) {
     if (!matrix || !symbols || !symbols.length) return;

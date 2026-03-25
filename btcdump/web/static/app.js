@@ -499,6 +499,49 @@ function onBacktestComplete(data) {
     }
 }
 
+// ── Monte Carlo Simulation ──
+async function runMonteCarlo() {
+    const el = document.getElementById('monteCarloResults');
+    el.style.display = '';
+    document.getElementById('monteCarloStats').innerHTML = '<span style="color:var(--text-muted)">Running 1000 simulations...</span>';
+    try {
+        const r = await fetch('/api/monte-carlo?simulations=1000&horizon=30');
+        const j = await r.json();
+        if (!j.ok) return;
+
+        const profitColor = j.prob_profit > 60 ? 'var(--green)' : j.prob_profit > 40 ? 'var(--yellow)' : 'var(--red)';
+        document.getElementById('monteCarloStats').innerHTML = `
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+                <span>P(Profit): <strong style="color:${profitColor}">${j.prob_profit}%</strong></span>
+                <span>P(2x): <strong>${j.prob_double}%</strong></span>
+                <span>P(Ruin <50%): <strong style="color:var(--red)">${j.prob_ruin}%</strong></span>
+                <span>Median: <strong>$${j.percentiles.p50}</strong></span>
+                <span>Avg/Trade: <strong>${j.avg_return_per_trade}%</strong></span>
+            </div>`;
+
+        if (j.sample_paths?.length) {
+            drawMonteCarlo(document.getElementById('monteCarloCanvas'), j.sample_paths, j.percentiles);
+        }
+    } catch(e) { toast('Monte Carlo failed', 'error'); }
+}
+
+// ── Seasonality Analysis ──
+async function loadSeasonality() {
+    const el = document.getElementById('seasonalityResults');
+    el.style.display = '';
+    try {
+        const r = await fetch(`/api/coin/${activeSymbol}/seasonality`);
+        const j = await r.json();
+        if (!j.ok) return;
+        if (j.hourly && Object.keys(j.hourly).length) {
+            drawSeasonalityChart(document.getElementById('seasonalHourCanvas'), j.hourly, 'hourly');
+        }
+        if (j.daily && Object.keys(j.daily).length) {
+            drawSeasonalityChart(document.getElementById('seasonalDayCanvas'), j.daily, 'daily');
+        }
+    } catch(e) { toast('Seasonality failed', 'error'); }
+}
+
 // ── Strategy Comparison ──
 async function compareStrategies() {
     const el = document.getElementById('strategyCompareResults');
