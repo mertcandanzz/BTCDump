@@ -121,6 +121,9 @@ class FeatureConfig:
         "approx_entropy", "sample_entropy_proxy",
         # v5.0 Pro: Detrended Fluctuation Analysis
         "dfa_exponent",
+        # v5.0 Pro: Feature Interactions
+        "ix_rsi_volume", "ix_macd_adx", "ix_momentum_regime",
+        "ix_whale_flow", "ix_squeeze_cycle",
     )
 
 

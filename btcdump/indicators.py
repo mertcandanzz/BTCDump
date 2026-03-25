@@ -53,6 +53,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _information_theory_features(df)
     df = _complexity_features(df)
     df = _dfa_feature(df)
+    df = _interaction_features(df)
     return df.copy()  # final defragment
 
 
@@ -1401,6 +1402,49 @@ def _dfa_feature(df: pd.DataFrame) -> pd.DataFrame:
                 dfa_vals[i] = max(0, min(2, alpha))
 
     df["dfa_exponent"] = dfa_vals
+    return df
+
+
+def _interaction_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Feature interaction terms - help tree models find non-linear patterns.
+
+    Key interactions between indicators that traders actually use together:
+    - RSI × Volume (oversold + high volume = strong reversal signal)
+    - MACD × ADX (signal + trend strength = quality filter)
+    - Momentum × Regime (trending market amplifies momentum)
+    """
+    def _safe_col(name, default=0):
+        if name in df.columns:
+            return df[name].fillna(default)
+        return pd.Series(default, index=df.index)
+
+    # RSI × Volume Ratio: oversold on high volume = strong buy signal
+    rsi = _safe_col("RSI", 50) / 100  # normalize to 0-1
+    vol = _safe_col("volume_ratio", 1).clip(0, 5) / 5  # normalize
+    df["ix_rsi_volume"] = (1 - rsi) * vol  # high when RSI low AND volume high
+
+    # MACD × ADX: trend signal × trend strength
+    macd_norm = _safe_col("MACD", 0)
+    close = df["close"].replace(0, np.nan)
+    macd_pct = (macd_norm / close * 100).fillna(0).clip(-5, 5) / 5  # normalize
+    adx_norm = _safe_col("ADX", 25) / 100
+    df["ix_macd_adx"] = macd_pct * adx_norm
+
+    # Momentum × Efficiency (trending amplifies momentum)
+    mom = _safe_col("momentum_quality", 0).clip(-5, 5) / 5
+    er = _safe_col("efficiency_ratio", 0.5)
+    df["ix_momentum_regime"] = mom * er
+
+    # Whale × Direction (whale activity aligned with trend)
+    whale = _safe_col("whale_score", 0).clip(0, 10) / 10
+    ofi = _safe_col("ofi_14", 0).clip(-1, 1)
+    df["ix_whale_flow"] = whale * ofi
+
+    # Squeeze × Cycle (squeeze at cycle bottom/top = breakout timing)
+    squeeze = 1 - _safe_col("squeeze_ratio", 1).clip(0, 2) / 2
+    cycle_phase = _safe_col("cycle_phase", 0)
+    df["ix_squeeze_cycle"] = squeeze * cycle_phase.abs()
+
     return df
 
 

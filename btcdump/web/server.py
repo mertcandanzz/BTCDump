@@ -1122,6 +1122,78 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Feature Decorrelation Analysis ─────────────────────
+
+    @app.get("/api/feature-decorrelation")
+    async def feature_decorrelation():
+        """Find highly correlated feature pairs that may be redundant."""
+        try:
+            def _analyze():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    state.coin_manager.active_symbol,
+                    state.coin_manager.active_interval,
+                )
+                enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+                cols = [c for c in state.config.features.feature_columns if c in enriched.columns]
+                subset = enriched[cols].dropna()
+
+                if len(subset) < 50:
+                    return {"error": "Insufficient data"}
+
+                corr = subset.corr()
+
+                # Find highly correlated pairs (|r| > 0.85)
+                redundant_pairs = []
+                seen = set()
+                for i in range(len(cols)):
+                    for j in range(i + 1, len(cols)):
+                        r = float(corr.iloc[i, j])
+                        if abs(r) > 0.85:
+                            pair = (cols[i], cols[j])
+                            if pair not in seen:
+                                seen.add(pair)
+                                redundant_pairs.append({
+                                    "feature1": cols[i],
+                                    "feature2": cols[j],
+                                    "correlation": round(r, 3),
+                                    "recommendation": f"Consider dropping one of {cols[i]}/{cols[j]}",
+                                })
+
+                redundant_pairs.sort(key=lambda x: abs(x["correlation"]), reverse=True)
+
+                # Feature clusters (groups of correlated features)
+                clusters = {}
+                for p in redundant_pairs:
+                    f1, f2 = p["feature1"], p["feature2"]
+                    found = False
+                    for cid, members in clusters.items():
+                        if f1 in members or f2 in members:
+                            members.add(f1)
+                            members.add(f2)
+                            found = True
+                            break
+                    if not found:
+                        clusters[len(clusters)] = {f1, f2}
+
+                return {
+                    "total_features": len(cols),
+                    "redundant_pairs": redundant_pairs[:20],
+                    "redundant_count": len(redundant_pairs),
+                    "clusters": [{"id": k, "features": list(v), "keep_suggestion": list(v)[0]}
+                                 for k, v in clusters.items()],
+                    "unique_effective_features": len(cols) - sum(len(v) - 1 for v in clusters.values()),
+                    "recommendation": f"{len(redundant_pairs)} highly correlated pairs found. "
+                                       f"Effective unique features: ~{len(cols) - sum(len(v)-1 for v in clusters.values())}/"
+                                       f"{len(cols)}",
+                }
+
+            result = await asyncio.to_thread(_analyze)
+            if "error" in result:
+                return {"ok": False, **result}
+            return {"ok": True, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Direction Probability ──────────────────────────────
 
     @app.get("/api/coin/{symbol}/direction-probability")
