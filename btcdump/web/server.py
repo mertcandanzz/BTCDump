@@ -772,6 +772,85 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Risk Dashboard + Kelly Sizing ──────────────────────
+
+    @app.get("/api/risk-dashboard")
+    async def risk_dashboard():
+        """Comprehensive risk analysis across portfolio and signals."""
+        try:
+            # Signal history stats
+            stats = state.signal_history.get_stats()
+            win_rate = stats.get("accuracy", 0) / 100 if stats.get("resolved") else 0.5
+
+            # Kelly Criterion: f* = (bp - q) / b
+            # b = win/loss ratio, p = win probability, q = loss probability
+            by_dir = stats.get("by_direction", {})
+            avg_win_pct = 1.5  # default assumption
+            avg_loss_pct = 1.0
+
+            # Calculate from paper trading if available
+            trades = state.paper_trader.get_history()
+            if len(trades) >= 5:
+                wins = [t for t in trades if t["pnl"] > 0]
+                losses = [t for t in trades if t["pnl"] <= 0]
+                if wins:
+                    avg_win_pct = sum(t["pnl_pct"] for t in wins) / len(wins)
+                if losses:
+                    avg_loss_pct = abs(sum(t["pnl_pct"] for t in losses) / len(losses))
+                win_rate = len(wins) / len(trades)
+
+            b = avg_win_pct / avg_loss_pct if avg_loss_pct > 0 else 1
+            p = win_rate
+            q = 1 - p
+            kelly = (b * p - q) / b if b > 0 else 0
+            kelly = max(0, min(0.25, kelly))  # Cap at 25%
+            half_kelly = kelly / 2  # Conservative Kelly
+
+            # Portfolio risk (if positions open)
+            portfolio = {}
+            try:
+                tickers = {t["symbol"]: t["lastPrice"] for t in state.coin_manager.fetcher.fetch_tickers()}
+                portfolio = state.paper_trader.get_portfolio(tickers)
+            except Exception:
+                pass
+
+            # Watchlist correlation risk
+            cache = state.coin_manager.signal_cache
+            directions = [cache.get(s, {}).get("direction", "") for s in state.coin_manager.watchlist]
+            same_direction = max(
+                sum(1 for d in directions if "BUY" in d),
+                sum(1 for d in directions if "SELL" in d),
+            )
+            concentration_risk = round(same_direction / max(1, len(directions)) * 100)
+
+            return {
+                "ok": True,
+                "kelly": {
+                    "full_kelly_pct": round(kelly * 100, 2),
+                    "half_kelly_pct": round(half_kelly * 100, 2),
+                    "win_rate": round(win_rate * 100, 1),
+                    "avg_win_pct": round(avg_win_pct, 2),
+                    "avg_loss_pct": round(avg_loss_pct, 2),
+                    "win_loss_ratio": round(b, 2),
+                    "recommended_size_pct": round(half_kelly * 100, 2),
+                    "recommended_size_usd": round(half_kelly * portfolio.get("total_value", 10000), 2),
+                },
+                "portfolio": {
+                    "total_value": portfolio.get("total_value", 10000),
+                    "open_positions": len(portfolio.get("positions", [])),
+                    "total_pnl_pct": portfolio.get("total_pnl_pct", 0),
+                },
+                "risk_metrics": {
+                    "concentration_risk_pct": concentration_risk,
+                    "signals_same_direction": same_direction,
+                    "total_watchlist": len(state.coin_manager.watchlist),
+                    "total_signals_tracked": stats.get("total_signals", 0),
+                    "signal_accuracy_pct": stats.get("accuracy", 0),
+                },
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Webhook Signal Forwarding ─────────────────────────
 
     @app.post("/api/webhook/configure")

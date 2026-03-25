@@ -423,7 +423,7 @@ function switchCenterTab(tab) {
     document.querySelector(`.center-tab[onclick*="${tab}"]`).classList.add('active');
     document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = '';
     if (tab === 'features') loadFeatureImportance();
-    if (tab === 'portfolio') loadPortfolio();
+    if (tab === 'portfolio') { loadPortfolio(); loadRiskDashboard(); }
     if (tab === 'history') loadSignalHistory();
 }
 
@@ -713,6 +713,48 @@ async function updateOutcomes() {
             toast(`Updated ${j.updated} outcomes`, 'success');
             loadSignalHistory();
         }
+    } catch(e) {}
+}
+
+// ── Risk Dashboard ──
+async function loadRiskDashboard() {
+    try {
+        const r = await fetch('/api/risk-dashboard');
+        const j = await r.json();
+        if (!j.ok) return;
+        const el = document.getElementById('riskDashboard');
+        el.style.display = '';
+
+        const k = j.kelly;
+        const rm = j.risk_metrics;
+        const kellyColor = k.full_kelly_pct > 5 ? 'var(--green)' : k.full_kelly_pct > 0 ? 'var(--yellow)' : 'var(--red)';
+        const concColor = rm.concentration_risk_pct > 70 ? 'var(--red)' : rm.concentration_risk_pct > 40 ? 'var(--yellow)' : 'var(--green)';
+
+        el.innerHTML = `
+            <div style="padding:8px 14px;font-size:10px">
+                <div class="signal-label" style="margin-bottom:6px">Risk Analysis</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+                    <div class="bt-metric" style="padding:6px">
+                        <span class="bt-metric-label">Kelly Size</span>
+                        <span class="bt-metric-value" style="font-size:14px;color:${kellyColor}">${k.half_kelly_pct.toFixed(1)}%</span>
+                        <div style="font-size:8px;color:var(--text-muted)">$${k.recommended_size_usd.toFixed(0)} per trade</div>
+                    </div>
+                    <div class="bt-metric" style="padding:6px">
+                        <span class="bt-metric-label">Win Rate</span>
+                        <span class="bt-metric-value" style="font-size:14px">${k.win_rate.toFixed(1)}%</span>
+                        <div style="font-size:8px;color:var(--text-muted)">W/L: ${k.win_loss_ratio.toFixed(2)}</div>
+                    </div>
+                    <div class="bt-metric" style="padding:6px">
+                        <span class="bt-metric-label">Concentration</span>
+                        <span class="bt-metric-value" style="font-size:14px;color:${concColor}">${rm.concentration_risk_pct}%</span>
+                        <div style="font-size:8px;color:var(--text-muted)">${rm.signals_same_direction}/${rm.total_watchlist} same dir</div>
+                    </div>
+                </div>
+                <div style="margin-top:6px;font-size:9px;color:var(--text-dim)">
+                    Signal Accuracy: ${rm.signal_accuracy_pct}% | Tracked: ${rm.total_signals_tracked} signals |
+                    Avg Win: +${k.avg_win_pct}% | Avg Loss: -${k.avg_loss_pct}%
+                </div>
+            </div>`;
     } catch(e) {}
 }
 
