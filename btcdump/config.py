@@ -135,6 +135,7 @@ class FeatureConfig:
         "fisher_transform", "connors_rsi",
         "cmo", "elder_bull", "elder_bear",
         "aroon_osc", "mass_index",
+        "klinger_osc", "vortex_diff",
     )
 
 

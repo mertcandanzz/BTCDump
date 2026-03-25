@@ -1651,6 +1651,35 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     ratio = ema_range / double_ema.replace(0, np.nan)
     df["mass_index"] = ratio.rolling(25).sum()
 
+    # ── Klinger Volume Oscillator ──
+    # Combines price trend direction with volume flow
+    trend = np.where(
+        (h + l + c) > (h.shift(1) + l.shift(1) + c.shift(1)), 1, -1
+    )
+    dm = h - l  # day's magnitude
+    cm = pd.Series(np.zeros(len(df)), index=df.index)
+    for i in range(1, len(df)):
+        if trend[i] == trend[i - 1]:
+            cm.iloc[i] = cm.iloc[i - 1] + dm.iloc[i]
+        else:
+            cm.iloc[i] = dm.iloc[i - 1] + dm.iloc[i]
+    vf = v * abs(2 * dm / cm.replace(0, np.nan) - 1) * np.sign(trend) * 100
+    kvo = vf.ewm(span=34, adjust=False).mean() - vf.ewm(span=55, adjust=False).mean()
+    # Normalize by volume for comparability
+    vol_mean = v.rolling(50, min_periods=1).mean().replace(0, np.nan)
+    df["klinger_osc"] = kvo / vol_mean
+
+    # ── Vortex Indicator ──
+    # VI+ and VI-: measures positive and negative trend movement
+    tr = pd.concat([h - l, (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1).max(axis=1)
+    vm_plus = (h - l.shift(1)).abs()
+    vm_minus = (l - h.shift(1)).abs()
+    period_vi = 14
+    vi_plus = vm_plus.rolling(period_vi).sum() / tr.rolling(period_vi).sum().replace(0, np.nan)
+    vi_minus = vm_minus.rolling(period_vi).sum() / tr.rolling(period_vi).sum().replace(0, np.nan)
+    # Vortex diff: positive = bullish trend, negative = bearish
+    df["vortex_diff"] = vi_plus - vi_minus
+
     return df
 
 
