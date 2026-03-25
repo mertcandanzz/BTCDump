@@ -1847,6 +1847,18 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     rsi_range = (rsi_high - rsi_low).replace(0, np.nan)
     df["stoch_rsi"] = ((rsi_col - rsi_low) / rsi_range * 100).fillna(50)
 
+    # ── TRIX ──
+    # Triple-smoothed EMA rate of change - ultimate noise filter
+    ema1_t = c.ewm(span=15, adjust=False).mean()
+    ema2_t = ema1_t.ewm(span=15, adjust=False).mean()
+    ema3_t = ema2_t.ewm(span=15, adjust=False).mean()
+    df["trix"] = ema3_t.pct_change() * 10000  # basis points
+
+    # ── Balance of Power ──
+    # (Close - Open) / (High - Low): who controls the bar
+    # +1 = full bull control, -1 = full bear control
+    df["balance_of_power"] = ((c - o) / (h - l).replace(0, np.nan)).rolling(14).mean()
+
     return df
 
 

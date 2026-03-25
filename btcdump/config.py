@@ -143,6 +143,7 @@ class FeatureConfig:
         "trend_persistence",
         "psar_dir", "chaikin_osc",
         "donchian_pos", "stoch_rsi",
+        "trix", "balance_of_power",
     )
 
 
