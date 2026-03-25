@@ -177,14 +177,59 @@ class ModelPipeline:
         final_scaler = StandardScaler()
         X_final_scaled = final_scaler.fit_transform(X_final)
 
+        # --- L1 Feature Selection (Lasso-based) ---
+        # Use quick Lasso to identify important feature COLUMNS
+        # This doesn't change the feature set, but produces a mask
+        # that can be used for analysis
+        feat_names = list(self._config.features.feature_columns)
+        n_raw = len(feat_names)
+        window = self._config.features.window_size
+
+        try:
+            from sklearn.linear_model import LassoCV
+            lasso = LassoCV(cv=3, max_iter=500, n_jobs=-1, random_state=42)
+            lasso.fit(X_final_scaled, y_final)
+            lasso_coefs = np.abs(lasso.coef_)
+            # Collapse window dimension: sum abs coefs per raw feature
+            lasso_importance = np.zeros(n_raw)
+            for i in range(n_raw):
+                lasso_importance[i] = lasso_coefs[i * window:(i + 1) * window].sum()
+            # Features with non-zero Lasso coefficients survive selection
+            feature_mask = [bool(lasso_importance[i] > 0) for i in range(n_raw)]
+            logger.info(
+                "L1 feature selection: %d/%d features selected",
+                sum(feature_mask), n_raw,
+            )
+        except Exception as exc:
+            logger.warning("L1 feature selection failed: %s", exc)
+            feature_mask = [True] * n_raw
+
+        # --- Train base models ---
         final_models = self._create_models()
         for model in final_models.values():
             model.fit(X_final_scaled, y_final)
 
+        # --- Ensemble Stacking (meta-learner) ---
+        # Train a simple Ridge regression on base model predictions
+        # This learns optimal combination beyond simple weight averaging
+        meta_model = None
+        if len(X_final_scaled) > 100:
+            try:
+                from sklearn.linear_model import Ridge
+                from sklearn.model_selection import cross_val_predict
+
+                # Generate out-of-fold predictions for stacking
+                base_preds = np.column_stack([
+                    cross_val_predict(model, X_final_scaled, y_final, cv=3)
+                    for model in final_models.values()
+                ])
+                meta_model = Ridge(alpha=1.0)
+                meta_model.fit(base_preds, y_final)
+                logger.info("Stacking meta-learner trained (Ridge on 3 base models)")
+            except Exception as exc:
+                logger.warning("Meta-learner training failed: %s", exc)
+
         # --- Feature importance extraction ---
-        feat_names = list(self._config.features.feature_columns)
-        n_raw = len(feat_names)
-        window = self._config.features.window_size
         agg = np.zeros(n_raw)
         for name, model in final_models.items():
             fi = model.feature_importances_  # shape: (n_raw * window,)
@@ -196,7 +241,7 @@ class ModelPipeline:
         if total > 0:
             agg = agg / total
 
-        return TrainedEnsemble(
+        ensemble = TrainedEnsemble(
             models=final_models,
             scaler=final_scaler,
             weights=weights,
@@ -208,7 +253,12 @@ class ModelPipeline:
             config_hash=self._config_hash(),
             feature_importances=agg.tolist(),
             feature_names=feat_names,
+            selected_features_mask=feature_mask,
         )
+
+        # Store meta-model as attribute
+        ensemble._meta_model = meta_model
+        return ensemble
 
     def predict(
         self, ensemble: TrainedEnsemble, raw_df: pd.DataFrame,
@@ -225,11 +275,19 @@ class ModelPipeline:
         for name, model in ensemble.models.items():
             preds[name] = float(model.predict(scaled)[0])
 
-        # Weighted ensemble
-        prediction = sum(preds[n] * ensemble.weights[n] for n in preds)
+        # Use meta-learner (stacking) if available, else weighted ensemble
+        meta = getattr(ensemble, "_meta_model", None)
+        pred_arr = np.array(list(preds.values()))
+
+        if meta is not None:
+            try:
+                prediction = float(meta.predict(pred_arr.reshape(1, -1))[0])
+            except Exception:
+                prediction = sum(preds[n] * ensemble.weights[n] for n in preds)
+        else:
+            prediction = sum(preds[n] * ensemble.weights[n] for n in preds)
 
         # Confidence: inverse of coefficient of variation
-        pred_arr = np.array(list(preds.values()))
         mean_pred = np.mean(pred_arr)
         if mean_pred != 0:
             cv = np.std(pred_arr) / abs(mean_pred)

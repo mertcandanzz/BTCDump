@@ -1122,6 +1122,58 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Live Signal SSE Stream ──────────────────────────────
+
+    @app.get("/api/stream/signals")
+    async def signal_stream():
+        """Server-Sent Events stream for real-time signal updates."""
+        from starlette.responses import StreamingResponse
+
+        async def event_generator():
+            import asyncio as _aio
+            last_data = {}
+            while True:
+                current = state.coin_manager.active_signal_data
+                if current and current != last_data and current.get("status") == "ready":
+                    last_data = dict(current)
+                    event_data = json.dumps({
+                        "symbol": current.get("symbol", ""),
+                        "direction": current.get("direction", ""),
+                        "confidence": current.get("confidence", 0),
+                        "price": current.get("current_price", 0),
+                        "change_pct": current.get("change_pct", 0),
+                        "timestamp": datetime.now().isoformat(),
+                    })
+                    yield f"data: {event_data}\n\n"
+                await _aio.sleep(5)
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    # ── L1 Feature Selection Results ──────────────────────
+
+    @app.get("/api/feature-selection-l1")
+    async def feature_selection_l1():
+        """Get L1 (Lasso) feature selection results from last training."""
+        ens = state.coin_manager.active_ensemble
+        if not ens or not ens.selected_features_mask:
+            return {"ok": False, "error": "No model with feature selection. Retrain."}
+
+        names = ens.feature_names
+        mask = ens.selected_features_mask
+        selected = [n for n, m in zip(names, mask) if m]
+        dropped = [n for n, m in zip(names, mask) if not m]
+
+        return {
+            "ok": True,
+            "total_features": len(names),
+            "selected_count": len(selected),
+            "dropped_count": len(dropped),
+            "selected_features": selected,
+            "dropped_features": dropped,
+            "selection_rate": round(len(selected) / len(names) * 100, 1),
+            "method": "LassoCV (L1 regularization, 3-fold CV)",
+        }
+
     # ── Full Platform Report ────────────────────────────────
 
     @app.get("/api/full-report")
