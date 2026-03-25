@@ -1,0 +1,9 @@
+__pycache__
+*.pyc
+.git
+.claude
+data/cache/*
+data/models/*
+data/*.json
+data/*.log
+.env

@@ -1122,6 +1122,78 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Backtest vs Buy-and-Hold ─────────────────────────
+
+    @app.get("/api/coin/{symbol}/strategy-vs-hold")
+    async def strategy_vs_hold(symbol: str):
+        """Compare ML strategy performance against simple buy-and-hold."""
+        try:
+            def _compare():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                df = data.df.tail(300)
+                if len(df) < 50:
+                    return {"error": "Insufficient data"}
+
+                closes = df["close"].values
+                start_price = float(closes[0])
+                end_price = float(closes[-1])
+
+                # Buy and Hold
+                bah_return = (end_price / start_price - 1) * 100
+
+                # ML Strategy (from signal cache if available, else EMA proxy)
+                enriched = indicators.compute_all(df.copy(), state.config.indicators)
+                ema9 = enriched["close"].ewm(span=9).mean().values
+                ema21 = enriched["close"].ewm(span=21).mean().values
+
+                strategy_equity = 100
+                position = 0
+                entry = 0
+                trades = 0
+                wins = 0
+
+                for i in range(22, len(closes)):
+                    if ema9[i] > ema21[i] and ema9[i-1] <= ema21[i-1] and position == 0:
+                        position = 1
+                        entry = closes[i]
+                    elif ema9[i] < ema21[i] and position == 1:
+                        ret = (closes[i] - entry) / entry - 0.002
+                        strategy_equity *= (1 + ret)
+                        trades += 1
+                        if ret > 0: wins += 1
+                        position = 0
+
+                if position == 1:
+                    ret = (closes[-1] - entry) / entry - 0.002
+                    strategy_equity *= (1 + ret)
+                    trades += 1
+                    if ret > 0: wins += 1
+
+                strategy_return = (strategy_equity / 100 - 1) * 100
+
+                alpha = strategy_return - bah_return
+
+                return {
+                    "buy_and_hold_return": round(bah_return, 2),
+                    "strategy_return": round(strategy_return, 2),
+                    "alpha": round(alpha, 2),
+                    "strategy_beats_hold": alpha > 0,
+                    "trades": trades,
+                    "win_rate": round(wins / trades * 100, 1) if trades > 0 else 0,
+                    "candles_analyzed": len(closes),
+                    "start_price": round(start_price, 2),
+                    "end_price": round(end_price, 2),
+                }
+
+            result = await asyncio.to_thread(_compare)
+            if "error" in result:
+                return {"ok": False, **result}
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── AI Trade Coach ────────────────────────────────────
 
     @app.get("/api/trade-coach")

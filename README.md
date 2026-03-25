@@ -1,143 +1,118 @@
-# BTCDump - Professional Bitcoin Signal Tool
+# BTCDump v5.1 Pro
 
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Status](https://img.shields.io/badge/Status-Active-brightgreen)
+Professional-grade crypto signal platform with 124 ML features, walk-forward validation, ensemble stacking, and a complete trading workflow.
 
-A professional-grade Bitcoin signal tool using ensemble machine learning (XGBoost, Random Forest, Gradient Boosting) with walk-forward validation, confidence scoring, and backtesting.
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
+![Features](https://img.shields.io/badge/ML%20Features-124-brightgreen)
+![Routes](https://img.shields.io/badge/API%20Routes-110-blue)
+![Tests](https://img.shields.io/badge/Tests-57%20passing-green)
 
-## Features
-
-- **Walk-Forward Validated ML**: 5-fold expanding-window cross-validation prevents data leakage
-- **Weighted Ensemble**: Inverse-MAPE weighted combination of 3 models
-- **Confidence Scoring**: 0-100% composite score (model agreement + indicator confluence)
-- **10 Technical Indicators**: RSI, MACD, Bollinger Bands, ATR, Stochastic, ADX, OBV, VWAP, MAs
-- **Backtesting Engine**: Win rate, profit factor, Sharpe ratio, max drawdown, equity curve
-- **Threshold Optimization**: Grid search for optimal signal thresholds on historical data
-- **Model Persistence**: Save/load trained models between sessions (joblib)
-- **Smart Auto-Live**: Only retrains when enough new candles arrive
-- **Data Caching**: Avoids redundant API calls with configurable TTL
-
-## Installation
+## Quick Start
 
 ```bash
-git clone https://github.com/codingcreatively/BTCDump.git
-cd BTCDump
-
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
+python run_web.py
+# Open http://localhost:8000
 ```
 
-## Usage
+**Docker:**
+```bash
+docker build -t btcdump .
+docker run -p 8000:8000 btcdump
+```
+
+## Platform Overview
+
+| Metric | Value |
+|--------|-------|
+| ML Features | 124 (2,480 dimensions) |
+| API Routes | 110 |
+| Code Lines | 13,500+ |
+| UI Modes | Dashboard, Analysis, Compare |
+| AI Providers | OpenAI, Claude, Grok, Gemini |
+| Tests | 57 passing |
+
+## ML Pipeline
+
+```
+Raw OHLCV --> 124 Features --> StandardScaler --> L1 Selection (LassoCV)
+                                                       |
+                                               +-------+-------+
+                                               |       |       |
+                                            XGBoost    RF   GradBoost
+                                               |       |       |
+                                               +---+---+---+---+
+                                                   |
+                                             Ridge Meta-Learner (Stacking)
+                                                   |
+                                             Final Prediction
+                                                   |
+                                         8-Component Consensus Engine
+                                                   |
+                                          0-100 Conviction Score
+```
+
+### 124 Features across 29 Categories
+
+Classic TA (17) | Returns & Momentum (12) | Volatility (11) | Candlestick Body (4) | Bollinger & Squeeze (4) | Volume & Liquidity (6) | Trend (4) | Regime Detection (6) | Time Cyclical (4) | Distribution (2) | Ichimoku Cloud (5) | Volume Profile (2) | Pivot Points (4) | Order Flow (2) | Candlestick Patterns (7) | Microstructure (5) | Statistical (6) | Whale Detection (2) | Shannon Entropy (1) | Adaptive MAs (4) | Seasonality (2) | FFT Cycle Detection (3) | Transfer Entropy (2) | Approximate Entropy (2) | DFA (1) | Feature Interactions (5) | Jump Detection (3) | Kalman Filter (2) | Core OHLCV (2)
+
+## Key Features
+
+### Signal Intelligence
+- **Consensus Engine**: 8 components (ML, technicals, volume, regime, patterns, momentum, seasonality, health) into one 0-100 score
+- **Direction Probability**: UP/DOWN % from ensemble disagreement
+- **Prediction Intervals**: 68% and 95% confidence ranges
+- **Regime-Adaptive Thresholds**: auto-adjust for market conditions
+- **Multi-TF Confluence**: weighted 15m/1h/4h/1d score
+
+### Chart
+- TradingView-quality candlestick + Heikin-Ashi toggle
+- EMA, Ichimoku Cloud, S/R Levels, Fibonacci, Auto Trend Lines
+- Zoom, Pan, Crosshair, Ruler tool
+
+### Trading
+- Paper trading with SL/TP and trade journal
+- Trade Setup Generator (A-D grade, 5-point checklist)
+- Kelly Criterion + conviction-based sizing
+- DCA Simulator, Portfolio Optimizer (Markowitz)
+- Execution Cost Estimator
+- AI Trade Coach (personalized advice)
+
+### Analysis
+- Market Scanner (9 conditions)
+- 5-Strategy Backtester with realistic fees
+- Strategy vs Buy-and-Hold comparison
+- Monte Carlo Simulation
+- Seasonality, Pair Trading, Correlation Breakdown
+- Feature Drift Detection, Signal Calibration
+
+### Compare Mode (5 tabs)
+Grid | Heatmap | Correlation | Scanner | Leaderboard + Momentum Rotation
+
+### Integration
+- Binance WebSocket live feed
+- Telegram + Discord notifications
+- Webhook API + SSE Stream
+- CSV Export | 4-provider AI Chat
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `D` | Dashboard | `S` | Analysis | `C` | Compare |
+| `B` | Buy | `Shift+S` | Short | `X` | Close | `T` | Trade Setup |
+| `R` | Refresh | `Ctrl+K` | Search |
+
+## Testing
 
 ```bash
-python main.py
-# or
-python -m btcdump
+python -m pytest tests/ -v
 ```
 
-### Menu Options
+## API Docs
 
-1. **Select Timeframe** - Choose interval (5m, 30m, 1h, 4h, 1d)
-2. **Train & Predict** - Walk-forward training + prediction with confidence score
-3. **Show Live Chart** - Candlestick chart with indicators (RSI, MACD, BB, volume)
-4. **Run Backtest** - Full walk-forward backtest with performance metrics
-5. **Show Last Signal** - Display previous analysis
-6. **Signal History** - View all generated signals
-7. **Auto Live Mode** - Continuous predictions with smart retraining
-
-## Architecture
-
-```
-btcdump/
-├── config.py          Dataclass-based configuration (all parameters)
-├── utils.py           Logging, retry decorator, path helpers
-├── data.py            Binance API fetching, caching, validation
-├── indicators.py      10 technical indicators (pure functions)
-├── features.py        Sliding-window feature engineering
-├── models.py          Walk-forward training, weighted ensemble, persistence
-├── signals.py         Signal generation with confidence scoring
-├── backtest.py        Walk-forward backtester with threshold optimization
-├── visualization.py   Candlestick charts, equity curves
-└── app.py             CLI menu and display logic
-```
-
-## Signal Generation
-
-Signals combine ML prediction with indicator confluence:
-
-| Component | Weight | Description |
-|-----------|--------|-------------|
-| Model Spread | 50% | How similar are the 3 model predictions? |
-| Directional Agreement | 30% | Do all models agree on direction? |
-| Indicator Confluence | 20% | How many of 5 indicators confirm? |
-
-Signals with confidence below 30% are automatically classified as HOLD.
-
-## Technical Indicators
-
-| Indicator | Parameters |
-|-----------|-----------|
-| Moving Averages | MA5, MA20, MA50 |
-| RSI | 14-period (Wilder's smoothing) |
-| MACD | 12/26 EMA, 9-period signal |
-| Bollinger Bands | 20-period, 2 std dev |
-| ATR | 14-period |
-| Stochastic | %K=14, %D=3 |
-| ADX | 14-period |
-| OBV | Z-score normalized |
-| VWAP | 20-period rolling proxy |
-| Volume Ratio | Volume / 20-period SMA |
-
-## Backtest Metrics
-
-- Win Rate, Profit Factor, Max Drawdown
-- Sharpe Ratio (annualized)
-- Per-signal-type accuracy
-- Equity curve with drawdown visualization
-- Optimal threshold discovery via grid search
-
-## Web UI with Multi-LLM Integration
-
-BTCDump includes a web interface with real-time multi-AI discussion capabilities.
-
-```bash
-python main.py --web          # Start web UI at http://localhost:8000
-python main.py --web --port 3000  # Custom port
-python run_web.py             # Shortcut
-```
-
-### Supported LLM Providers
-
-| Provider | Models | API Key Env Var |
-|----------|--------|-----------------|
-| OpenAI | GPT-4o, GPT-4o-mini, GPT-4-turbo, o3-mini | `OPENAI_API_KEY` |
-| Claude | Opus 4.6, Sonnet 4.6, Haiku 4.5 | `ANTHROPIC_API_KEY` |
-| Grok | Grok-3, Grok-3-mini, Grok-3-fast | `XAI_API_KEY` |
-| Gemini | Gemini 2.5 Pro, 2.5 Flash, 2.0 Flash | `GOOGLE_API_KEY` |
-
-### Features
-
-- **AI Discussion Panel**: All active models debate your questions in multi-round discussions
-- **Individual Chat Windows**: Chat privately with each model about the current market state
-- **Signal Dashboard**: Real-time signal display with all indicators
-- **Settings UI**: Configure API keys and select models per provider
-
-### Discussion Mode
-
-Ask a question and all active AI models will:
-1. Answer independently (Round 1)
-2. Read each other's answers and respond (Round 2)
-3. Final thoughts with potential mind-changes (Round 3)
-
-Models reference each other by name, agree/disagree, and produce a natural debate.
+Swagger UI at `http://localhost:8000/docs` when server is running.
 
 ## Disclaimer
 
-**This tool is for educational and research purposes only.**
-
-- Cryptocurrency trading involves significant risk
-- Past performance does not guarantee future results
-- Do not use this tool for actual trading decisions
-- The author assumes no liability for financial losses
+**Educational and research purposes only.** Cryptocurrency trading involves significant risk. Do not use for actual trading decisions.
