@@ -1876,6 +1876,21 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["vwap_zscore"] = 0.0
 
+    # ── McGinley Dynamic ──
+    # Self-adjusting MA that speeds up in downtrends, slows in uptrends
+    # MD(t) = MD(t-1) + (Close - MD(t-1)) / (N * (Close/MD(t-1))^4)
+    n_mg = 14
+    md = pd.Series(np.nan, index=df.index)
+    md.iloc[n_mg - 1] = float(c.iloc[:n_mg].mean())
+    for i in range(n_mg, len(df)):
+        prev = md.iloc[i - 1]
+        if prev > 0 and not np.isnan(prev):
+            ratio = float(c.iloc[i]) / prev
+            md.iloc[i] = prev + (float(c.iloc[i]) - prev) / (n_mg * max(ratio ** 4, 0.01))
+        else:
+            md.iloc[i] = float(c.iloc[i])
+    df["mcginley_dist"] = (c - md) / c.replace(0, np.nan) * 100
+
     return df
 
 

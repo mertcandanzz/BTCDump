@@ -145,6 +145,7 @@ class FeatureConfig:
         "donchian_pos", "stoch_rsi",
         "trix", "balance_of_power",
         "ppo", "ppo_hist", "vwap_zscore",
+        "mcginley_dist",
     )
 
 
