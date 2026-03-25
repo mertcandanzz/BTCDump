@@ -19,9 +19,13 @@ from btcdump.data import DataFetcher
 from btcdump.models import ModelPipeline
 from btcdump.signals import SignalGenerator
 from btcdump.utils import ensure_dirs, setup_logging
+from btcdump.web.alerts import AlertManager
 from btcdump.web.coin_manager import CoinManager
 from btcdump.web.discussion import DiscussionEngine
+from btcdump.web.live_feed import BinanceLiveFeed
 from btcdump.web.llm import LLMManager, PROVIDER_MODELS
+from btcdump.web.notifications import NotificationManager
+from btcdump.web.paper_trading import PaperTrader
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +50,20 @@ class BTCDumpWebApp:
             self.fetcher, self.pipeline, self.signal_gen, self.config,
         )
 
-        # Chat histories per LLM provider
         self.chat_histories: Dict[str, list] = {p: [] for p in PROVIDER_MODELS}
+        self.notifications = NotificationManager()
+        self.alerts = AlertManager()
+        self.paper_trader = PaperTrader()
+        self.live_feed = BinanceLiveFeed()
+        self.connected_ws: set = set()
 
         ensure_dirs(self.config.data.cache_dir, self.config.model.models_dir)
         setup_logging(self.config.log_level, self.config.log_file)
 
 
 def create_app(config: Optional[AppConfig] = None) -> FastAPI:
-    """Create and configure the FastAPI application."""
     state = BTCDumpWebApp(config)
-
-    app = FastAPI(title="BTCDump", version="4.0.0")
+    app = FastAPI(title="BTCDump", version="5.0.0")
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
@@ -159,6 +165,34 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         state.coin_manager.set_interval(interval)
         return {"ok": True, "interval": interval}
 
+    # ── Feature Importance ────────────────────────────────
+
+    FEATURE_DESC = {
+        "close":"Closing price","volume":"Trading volume","RSI":"Relative Strength Index (14)","MACD":"MACD line (12-26 EMA)","volume_ratio":"Volume / 20-period avg","ma5":"5-period SMA","ma20":"20-period SMA","ma50":"50-period SMA","BB_upper":"Upper Bollinger Band","BB_lower":"Lower Bollinger Band","ATR":"Average True Range (14)","stoch_k":"Stochastic %K (14)","stoch_d":"Stochastic %D (3)","ADX":"Avg Directional Index (14)","OBV_norm":"On-Balance Volume z-score","ROC":"Rate of Change (10)","williams_r":"Williams %R (14)","CCI":"Commodity Channel Index (20)","MFI":"Money Flow Index (14)","returns_1":"1-candle return","returns_5":"5-candle return","price_momentum":"10-bar price momentum","volatility_10":"10-period return volatility","high_low_range":"Candle range % of price","parkinson_vol":"Parkinson volatility","atr_ratio":"ATR expansion ratio","body_ratio":"Candle body ratio (0=doji,1=full)","buying_pressure":"Close position in range","upper_shadow":"Upper wick ratio","lower_shadow":"Lower wick ratio","bb_pct_b":"Bollinger %B position","bb_width":"BB width (squeeze)","vol_delta":"Volume delta (buy/sell)","ad_norm":"Accumulation/Distribution","hh_streak":"Higher highs streak","ll_streak":"Lower lows streak","dist_from_high":"Distance from 20-bar high","dist_from_low":"Distance from 20-bar low","rsi_momentum":"RSI acceleration","macd_hist_slope":"MACD histogram slope","close_ma_ratio":"Price vs MA20 ratio","price_zscore":"Price z-score","vwap_dist":"VWAP distance in ATR",
+    }
+
+    @app.get("/api/feature-importance")
+    async def get_feature_importance():
+        ens = state.coin_manager.active_ensemble
+        if not ens or not ens.feature_importances:
+            return {"ok": False, "error": "No model trained yet. Run Refresh first."}
+        pairs = list(zip(ens.feature_names, ens.feature_importances))
+        pairs.sort(key=lambda x: x[1], reverse=True)
+        features = []
+        for rank, (name, imp) in enumerate(pairs, 1):
+            features.append({"name": name, "importance": round(imp, 5), "rank": rank, "description": FEATURE_DESC.get(name, name)})
+        return {"ok": True, "features": features}
+
+    # ── Multi-Timeframe ───────────────────────────────────
+
+    @app.get("/api/coin/{symbol}/multi-tf")
+    async def get_multi_tf(symbol: str):
+        try:
+            data = await asyncio.to_thread(state.coin_manager.compute_multi_tf_signal, symbol)
+            return {"ok": True, **data}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── LLM Providers ─────────────────────────────────────
 
     @app.get("/api/providers")
@@ -175,12 +209,122 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         )
         return {"ok": True, "status": state.llm_manager.get_status()}
 
+    # ── Paper Trading ─────────────────────────────────────
+
+    @app.post("/api/paper/open")
+    async def paper_open(body: dict):
+        try:
+            sym = body.get("symbol", state.coin_manager.active_symbol).upper()
+            side = body.get("side", "long")
+            size = body.get("size_pct", 10)
+            sl = body.get("stop_loss", 0)
+            tp = body.get("take_profit", 0)
+            tickers = {t["symbol"]: t["lastPrice"] for t in state.coin_manager.fetcher.fetch_tickers()}
+            price = tickers.get(sym, 0)
+            if not price:
+                return {"ok": False, "error": f"No price for {sym}"}
+            result = state.paper_trader.open_position(sym, side, price, size, sl, tp)
+            return {"ok": True, "position": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @app.post("/api/paper/close")
+    async def paper_close(body: dict):
+        try:
+            sym = body.get("symbol", "").upper()
+            tickers = {t["symbol"]: t["lastPrice"] for t in state.coin_manager.fetcher.fetch_tickers()}
+            price = tickers.get(sym, 0)
+            result = state.paper_trader.close_position(sym, price)
+            return {"ok": True, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    @app.get("/api/paper/portfolio")
+    async def paper_portfolio():
+        tickers = {t["symbol"]: t["lastPrice"] for t in state.coin_manager.fetcher.fetch_tickers()}
+        return {"ok": True, **state.paper_trader.get_portfolio(tickers)}
+
+    @app.get("/api/paper/history")
+    async def paper_history():
+        return {"ok": True, "trades": state.paper_trader.get_history()}
+
+    @app.post("/api/paper/reset")
+    async def paper_reset():
+        state.paper_trader.reset()
+        return {"ok": True}
+
+    # ── Alerts ────────────────────────────────────────────
+
+    @app.post("/api/alerts")
+    async def add_alert(body: dict):
+        a = state.alerts.add(body.get("symbol", ""), body.get("condition", ""), body.get("value", 0))
+        return {"ok": True, "alert": {"id": a.id, "symbol": a.symbol, "condition": a.condition, "value": a.value}}
+
+    @app.get("/api/alerts")
+    async def get_alerts():
+        return {"ok": True, "alerts": state.alerts.get_all()}
+
+    @app.delete("/api/alerts/{alert_id}")
+    async def delete_alert(alert_id: str):
+        return {"ok": state.alerts.remove(alert_id)}
+
+    # ── Notifications ─────────────────────────────────────
+
+    @app.post("/api/notifications/configure")
+    async def configure_notifications(body: dict):
+        state.notifications.configure(
+            telegram_token=body.get("telegram_token", ""),
+            telegram_chat_id=body.get("telegram_chat_id", ""),
+            discord_webhook=body.get("discord_webhook", ""),
+            enabled=body.get("enabled", True),
+        )
+        return {"ok": True, "status": state.notifications.get_status()}
+
+    @app.get("/api/notifications/status")
+    async def get_notification_status():
+        return {"ok": True, **state.notifications.get_status()}
+
+    @app.post("/api/notifications/test")
+    async def test_notification():
+        test_data = {"direction": "TEST", "confidence": 99, "current_price": 70000,
+                     "predicted_price": 71000, "change_pct": 1.43, "rsi": 55, "risk_reward": 2.1}
+        state.notifications._previous_signals["TEST"] = "HOLD"
+        msg = await state.notifications.check_and_notify("TESTUSDT", {**test_data, "direction": "BUY"})
+        return {"ok": bool(msg), "message": msg or "Notifications not configured"}
+
     # ── WebSocket ─────────────────────────────────────────
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
         await ws.accept()
-        logger.info("WebSocket connected")
+        state.connected_ws.add(ws)
+        logger.info("WebSocket connected (%d clients)", len(state.connected_ws))
+
+        # Start live feed if not running
+        async def on_tick(tick):
+            for client in list(state.connected_ws):
+                try:
+                    await client.send_json({"type": "live_price", "data": tick})
+                except Exception:
+                    state.connected_ws.discard(client)
+            # Check alerts on each tick
+            triggered = state.alerts.check(tick["symbol"], tick["price"])
+            for a in triggered:
+                for client in list(state.connected_ws):
+                    try:
+                        await client.send_json({"type": "alert_triggered", "alert": {
+                            "id": a.id, "symbol": a.symbol,
+                            "condition": a.condition, "value": a.value,
+                        }})
+                    except Exception:
+                        pass
+
+        symbols = list(set([state.coin_manager.active_symbol] + state.coin_manager.watchlist))
+        for s in symbols:
+            state.live_feed.subscribe(s, on_tick)
+        if not state.live_feed._task:
+            await state.live_feed.start(symbols)
+
         try:
             while True:
                 raw = await ws.receive_text()
@@ -199,11 +343,16 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
                     await _handle_refresh_watchlist(ws, state)
                 elif t == "set_watchlist":
                     await _handle_set_watchlist(ws, state, msg)
+                elif t == "run_backtest":
+                    await _handle_backtest(ws, state, msg)
                 else:
                     await ws.send_json({"type": "error", "message": f"Unknown: {t}"})
         except WebSocketDisconnect:
-            logger.info("WebSocket disconnected")
+            state.connected_ws.discard(ws)
+            state.live_feed.unsubscribe_all(on_tick)
+            logger.info("WebSocket disconnected (%d clients)", len(state.connected_ws))
         except Exception:
+            state.connected_ws.discard(ws)
             logger.exception("WebSocket error")
 
     return app
@@ -362,6 +511,55 @@ async def _handle_discussion(ws: WebSocket, state: BTCDumpWebApp, msg: dict) -> 
         on_chunk=on_chunk,
     )
     await ws.send_json({"type": "discussion_complete"})
+
+
+async def _handle_backtest(ws: WebSocket, state: BTCDumpWebApp, msg: dict) -> None:
+    """Run backtest with progressive updates."""
+    from btcdump.backtest import BacktestEngine
+
+    symbol = msg.get("symbol", state.coin_manager.active_symbol)
+    retrain_every = msg.get("retrain_every", 50)
+
+    await ws.send_json({"type": "status", "message": f"Running backtest for {symbol}..."})
+
+    engine = BacktestEngine(state.config)
+
+    last_pct = [0]
+
+    def on_progress(step, total):
+        nonlocal last_pct
+        pct = int(step / total * 100) if total > 0 else 0
+        if pct >= last_pct[0] + 5:  # send every 5%
+            last_pct[0] = pct
+            import asyncio as _aio
+            try:
+                _aio.get_event_loop().create_task(
+                    ws.send_json({"type": "backtest_progress", "data": {"step": step, "total": total, "pct": pct}})
+                )
+            except Exception:
+                pass
+
+    try:
+        data = state.coin_manager.fetcher.fetch_with_cache(symbol, state.coin_manager.active_interval)
+        result = await asyncio.to_thread(
+            engine.run, data.df, symbol, state.coin_manager.active_interval, retrain_every,
+        )
+
+        await ws.send_json({"type": "backtest_complete", "data": {
+            "win_rate": result.win_rate,
+            "profit_factor": result.profit_factor,
+            "sharpe_ratio": result.sharpe_ratio,
+            "max_drawdown_pct": result.max_drawdown_pct,
+            "total_return_pct": result.total_return_pct,
+            "total_signals": result.total_signals,
+            "avg_win_pct": result.avg_win_pct,
+            "avg_loss_pct": result.avg_loss_pct,
+            "signal_accuracy": result.signal_accuracy,
+            "equity_curve": result.equity_curve[["equity", "drawdown"]].values.tolist(),
+            "optimal_thresholds": result.optimal_thresholds,
+        }})
+    except Exception as e:
+        await ws.send_json({"type": "error", "message": f"Backtest failed: {e}"})
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8000, config: Optional[AppConfig] = None):

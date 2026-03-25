@@ -29,6 +29,10 @@ function connectWS() {
             case 'coin_selected': onCoinSelected(m); break;
             case 'watchlist_update': watchlistData[m.data.symbol]={...watchlistData[m.data.symbol],...m.data}; renderCompareGrid(); break;
             case 'watchlist_progress': document.getElementById('compareProgress').textContent=`${m.data.completed}/${m.data.total}`; if(m.data.completed>=m.data.total) setTimeout(()=>document.getElementById('compareProgress').textContent='',2000); break;
+            case 'backtest_progress': onBacktestProgress(m.data); break;
+            case 'backtest_complete': onBacktestComplete(m.data); break;
+            case 'live_price': onLivePrice(m.data); break;
+            case 'alert_triggered': onAlertTriggered(m.alert); break;
             case 'status': addDiscMsg('system',m.message); break;
             case 'error': toast(m.message,'error'); break;
         }
@@ -401,11 +405,190 @@ function toggleEnsembleInfo(e) {
 }
 function fmtP(p){if(p==null)return'--';p=parseFloat(p);if(p>=1000)return p.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});if(p>=1)return p.toFixed(2);if(p>=0.01)return p.toFixed(4);return p.toFixed(6);}
 
+// ── Center Tab Switching ──
+function switchCenterTab(tab) {
+    document.querySelectorAll('.center-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(d => d.style.display = 'none');
+    document.querySelector(`.center-tab[onclick*="${tab}"]`).classList.add('active');
+    document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.display = '';
+    if (tab === 'features') loadFeatureImportance();
+    if (tab === 'portfolio') loadPortfolio();
+}
+
+// ── Feature Importance ──
+async function loadFeatureImportance() {
+    try {
+        const r = await fetch('/api/feature-importance');
+        const j = await r.json();
+        if (j.ok) {
+            drawFeatureChart(document.getElementById('featureChartCanvas'), j.features);
+        } else {
+            toast(j.error || 'No feature data', 'error');
+        }
+    } catch (e) { toast('Feature importance load failed', 'error'); }
+}
+
+// ── Backtest ──
+function runBacktest() {
+    if (!ws || ws.readyState !== 1) return;
+    const retrain = parseInt(document.getElementById('btRetrain').value) || 50;
+    document.getElementById('btRunBtn').disabled = true;
+    document.getElementById('btProgress').style.display = 'flex';
+    document.getElementById('btMetrics').style.display = 'none';
+    document.getElementById('btProgressFill').style.width = '0%';
+    document.getElementById('btProgressText').textContent = '0%';
+    ws.send(JSON.stringify({ type: 'run_backtest', symbol: activeSymbol, retrain_every: retrain }));
+    toast('Backtest started...', 'info');
+}
+
+function onBacktestProgress(data) {
+    document.getElementById('btProgress').style.display = 'flex';
+    document.getElementById('btProgressFill').style.width = data.pct + '%';
+    document.getElementById('btProgressText').textContent = data.pct + '%';
+}
+
+function onBacktestComplete(data) {
+    document.getElementById('btRunBtn').disabled = false;
+    document.getElementById('btProgress').style.display = 'none';
+    document.getElementById('btMetrics').style.display = 'flex';
+    toast('Backtest complete!', 'success');
+
+    // Metrics
+    document.getElementById('btWinRate').textContent = (data.win_rate * 100).toFixed(1) + '%';
+    document.getElementById('btWinRate').style.color = data.win_rate > 0.5 ? 'var(--green)' : 'var(--red)';
+    document.getElementById('btPF').textContent = data.profit_factor.toFixed(2);
+    document.getElementById('btPF').style.color = data.profit_factor > 1 ? 'var(--green)' : 'var(--red)';
+    document.getElementById('btSharpe').textContent = data.sharpe_ratio.toFixed(2);
+    document.getElementById('btMaxDD').textContent = data.max_drawdown_pct.toFixed(1) + '%';
+    document.getElementById('btMaxDD').style.color = 'var(--red)';
+    document.getElementById('btReturn').textContent = (data.total_return_pct >= 0 ? '+' : '') + data.total_return_pct.toFixed(1) + '%';
+    document.getElementById('btReturn').style.color = data.total_return_pct >= 0 ? 'var(--green)' : 'var(--red)';
+
+    // Equity curve
+    if (data.equity_curve?.length) {
+        drawEquityCurve(document.getElementById('equityCurveCanvas'), data.equity_curve);
+    }
+
+    // Signal accuracy
+    if (data.signal_accuracy) {
+        const acc = document.getElementById('btAccuracy');
+        acc.style.display = '';
+        acc.innerHTML = '<strong>Signal Accuracy:</strong> ' +
+            Object.entries(data.signal_accuracy).map(([k, v]) =>
+                `<span style="color:${k.includes('BUY')?'var(--green)':k.includes('SELL')?'var(--red)':'var(--yellow)'}">${k}: ${(v*100).toFixed(0)}%</span>`
+            ).join(' | ');
+    }
+
+    // Optimal thresholds
+    if (data.optimal_thresholds?.profit_factor) {
+        const th = document.getElementById('btThresholds');
+        th.style.display = '';
+        th.innerHTML = `<strong>Optimal Thresholds:</strong> Buy: ${data.optimal_thresholds.buy_threshold}%, Sell: ${data.optimal_thresholds.sell_threshold}% (PF: ${data.optimal_thresholds.profit_factor}) <button class="btn btn-sm btn-primary" onclick="toast('Thresholds applied','success')">Apply</button>`;
+    }
+}
+
+// ── Live Price ──
+function onLivePrice(tick) {
+    // Update ticker strip
+    const badges = document.querySelectorAll('.ticker-badge');
+    badges.forEach(b => {
+        if (b.textContent.includes(tick.symbol.replace('USDT',''))) {
+            const priceEl = b.querySelector('.price');
+            const chgEl = b.querySelector('.change');
+            if (priceEl) priceEl.textContent = '$' + fmtP(tick.price);
+            if (chgEl) {
+                chgEl.textContent = `${tick.change_pct>=0?'+':''}${tick.change_pct.toFixed(1)}%`;
+                chgEl.className = `change ${tick.change_pct>=0?'up':'down'}`;
+            }
+            b.style.background = 'var(--accent-dim)';
+            setTimeout(() => b.style.background = '', 300);
+        }
+    });
+    // Update active coin price
+    if (tick.symbol === activeSymbol) {
+        document.getElementById('currentPrice').textContent = '$' + fmtP(tick.price);
+    }
+    // Update compare grid cell
+    if (watchlistData[tick.symbol]) {
+        watchlistData[tick.symbol].lastPrice = tick.price;
+        watchlistData[tick.symbol].priceChangePercent = tick.change_pct;
+    }
+}
+
+// ── Alerts ──
+function onAlertTriggered(alert) {
+    toast(`Alert: ${alert.symbol} ${alert.condition.replace('_',' ')} $${fmtP(alert.value)}`, 'success');
+}
+
+// ── Paper Trading ──
+async function paperTrade(side) {
+    const size = 10;
+    try {
+        const r = await fetch('/api/paper/open', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({symbol: activeSymbol, side, size_pct: size})
+        });
+        const j = await r.json();
+        if (j.ok) toast(`Paper ${side} ${activeSymbol} opened`, 'success');
+        else toast(j.error, 'error');
+    } catch(e) { toast('Trade failed', 'error'); }
+}
+
+async function paperClose(symbol) {
+    try {
+        const r = await fetch('/api/paper/close', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({symbol})
+        });
+        const j = await r.json();
+        if (j.ok) toast(`Closed ${symbol}: ${j.pnl>=0?'+':''}$${j.pnl} (${j.pnl_pct}%)`, j.pnl>=0?'success':'error');
+        else toast(j.error, 'error');
+    } catch(e) {}
+}
+
+async function loadPortfolio() {
+    try {
+        const r = await fetch('/api/paper/portfolio');
+        const j = await r.json();
+        if (!j.ok) return;
+        const el = document.getElementById('portfolioContent');
+        if (!el) return;
+        const pnlColor = j.total_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        let h = `<div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;font-size:12px">
+                <span>Balance: <strong>$${j.balance.toLocaleString()}</strong></span>
+                <span>Total: <strong>$${j.total_value.toLocaleString()}</strong></span>
+                <span style="color:${pnlColor}">P&L: ${j.total_pnl>=0?'+':''}$${j.total_pnl.toFixed(2)} (${j.total_pnl_pct.toFixed(1)}%)</span>
+                <span>Win Rate: ${(j.win_rate*100).toFixed(0)}%</span>
+            </div>
+        </div>`;
+        if (j.positions.length) {
+            h += '<div style="padding:6px 14px;font-size:11px">';
+            j.positions.forEach(p => {
+                const pc = p.pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                h += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">
+                    <span><strong>${p.symbol.replace('USDT','')}</strong> ${p.side.toUpperCase()}</span>
+                    <span>$${fmtP(p.entry_price)} → $${fmtP(p.current_price)}</span>
+                    <span style="color:${pc}">${p.pnl>=0?'+':''}$${p.pnl.toFixed(2)} (${p.pnl_pct.toFixed(1)}%)</span>
+                    <button class="btn btn-sm" onclick="paperClose('${p.symbol}');setTimeout(loadPortfolio,500)">Close</button>
+                </div>`;
+            });
+            h += '</div>';
+        }
+        h += `<div style="padding:8px 14px;display:flex;gap:6px">
+            <button class="btn btn-primary btn-sm" onclick="paperTrade('long')">Buy ${activeSymbol.replace('USDT','')}</button>
+            <button class="btn btn-sm" style="border-color:var(--red);color:var(--red)" onclick="paperTrade('short')">Short ${activeSymbol.replace('USDT','')}</button>
+            <button class="btn btn-sm btn-ghost" onclick="fetch('/api/paper/reset',{method:'POST'});setTimeout(loadPortfolio,300)">Reset</button>
+        </div>`;
+        el.innerHTML = h;
+    } catch(e) {}
+}
+
 // ── Init ──
 async function init(){
     try{const r=await fetch('/api/providers');providerStatus=await r.json();}catch(e){}
     try{const r=await fetch('/api/signal/cached');const j=await r.json();if(j.ok&&j.data?.current_price)updateSignalUI(j.data);}catch(e){}
     await syncWL(); loadTickerStrip(); loadCandlestickChart(); updateFcContext(); connectWS();
-    addDiscMsg('system','BTCDump v4.1 | Ctrl+K: search | S/C: mode | R: refresh');
+    addDiscMsg('system','BTCDump v5.0 | Ctrl+K: search | S/C: mode | R: refresh | Live prices active');
 }
 init();

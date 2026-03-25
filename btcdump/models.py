@@ -57,6 +57,8 @@ class TrainedEnsemble:
     symbol: str
     train_candles: int
     config_hash: str
+    feature_importances: List[float] = field(default_factory=list)
+    feature_names: List[str] = field(default_factory=list)
 
     @property
     def avg_mape(self) -> float:
@@ -174,6 +176,21 @@ class ModelPipeline:
         for model in final_models.values():
             model.fit(X_final_scaled, y_final)
 
+        # --- Feature importance extraction ---
+        feat_names = list(self._config.features.feature_columns)
+        n_raw = len(feat_names)
+        window = self._config.features.window_size
+        agg = np.zeros(n_raw)
+        for name, model in final_models.items():
+            fi = model.feature_importances_  # shape: (n_raw * window,)
+            collapsed = np.zeros(n_raw)
+            for i in range(n_raw):
+                collapsed[i] = fi[i * window : (i + 1) * window].sum()
+            agg += collapsed * weights.get(name, 1 / 3)
+        total = agg.sum()
+        if total > 0:
+            agg = agg / total
+
         return TrainedEnsemble(
             models=final_models,
             scaler=final_scaler,
@@ -184,6 +201,8 @@ class ModelPipeline:
             symbol=symbol,
             train_candles=len(raw_df),
             config_hash=self._config_hash(),
+            feature_importances=agg.tolist(),
+            feature_names=feat_names,
         )
 
     def predict(

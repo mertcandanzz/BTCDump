@@ -172,14 +172,65 @@
         <!-- Center Panel -->
         <section id="centerPanel">
             <div id="singleModeContent">
-                <div id="chartSection" class="chart-section">
-                    <div class="chart-header">
-                        <span id="chartTitle" class="chart-title">BTC/USDT</span>
-                        <span id="chartPrice" class="chart-live-price"></span>
-                        <span id="lastUpdated" class="chart-updated"></span>
-                    </div>
-                    <canvas id="candlestickChart" class="candlestick-canvas"></canvas>
+                <!-- Tab Bar -->
+                <div class="center-tabs">
+                    <button class="center-tab active" onclick="switchCenterTab('chart')">Chart</button>
+                    <button class="center-tab" onclick="switchCenterTab('backtest')">Backtest</button>
+                    <button class="center-tab" onclick="switchCenterTab('features')">Features</button>
+                    <button class="center-tab" onclick="switchCenterTab('portfolio')">Portfolio</button>
                 </div>
+
+                <!-- Chart Tab -->
+                <div id="tabChart" class="tab-content">
+                    <div class="chart-section">
+                        <div class="chart-header">
+                            <span id="chartTitle" class="chart-title">BTC/USDT</span>
+                            <span id="chartPrice" class="chart-live-price"></span>
+                            <span id="lastUpdated" class="chart-updated"></span>
+                        </div>
+                        <canvas id="candlestickChart" class="candlestick-canvas"></canvas>
+                    </div>
+                </div>
+
+                <!-- Backtest Tab -->
+                <div id="tabBacktest" class="tab-content" style="display:none">
+                    <div class="bt-toolbar">
+                        <button class="btn btn-primary" id="btRunBtn" onclick="runBacktest()">Run Backtest</button>
+                        <label class="bt-opt">Retrain every: <select id="btRetrain"><option value="30">30</option><option value="50" selected>50</option><option value="100">100</option></select> candles</label>
+                        <div class="bt-progress" id="btProgress" style="display:none">
+                            <div class="bt-progress-bar"><div class="bt-progress-fill" id="btProgressFill"></div></div>
+                            <span id="btProgressText">0%</span>
+                        </div>
+                    </div>
+                    <div class="bt-metrics" id="btMetrics" style="display:none">
+                        <div class="bt-metric"><span class="bt-metric-label">Win Rate</span><span class="bt-metric-value" id="btWinRate">--</span></div>
+                        <div class="bt-metric"><span class="bt-metric-label">Profit Factor</span><span class="bt-metric-value" id="btPF">--</span></div>
+                        <div class="bt-metric"><span class="bt-metric-label">Sharpe</span><span class="bt-metric-value" id="btSharpe">--</span></div>
+                        <div class="bt-metric"><span class="bt-metric-label">Max DD</span><span class="bt-metric-value" id="btMaxDD">--</span></div>
+                        <div class="bt-metric"><span class="bt-metric-label">Return</span><span class="bt-metric-value" id="btReturn">--</span></div>
+                    </div>
+                    <canvas id="equityCurveCanvas" style="width:100%;height:220px"></canvas>
+                    <div id="btAccuracy" class="bt-accuracy" style="display:none"></div>
+                    <div id="btThresholds" class="bt-thresholds" style="display:none"></div>
+                </div>
+
+                <!-- Features Tab -->
+                <div id="tabFeatures" class="tab-content" style="display:none">
+                    <div style="padding:8px 14px">
+                        <button class="btn btn-primary btn-sm" onclick="loadFeatureImportance()">Load Feature Importance</button>
+                        <span class="panel-hint">Requires a trained model</span>
+                    </div>
+                    <canvas id="featureChartCanvas" style="width:100%;height:400px"></canvas>
+                </div>
+
+                <!-- Portfolio Tab -->
+                <div id="tabPortfolio" class="tab-content" style="display:none">
+                    <div id="portfolioContent" style="font-size:12px;color:var(--text-dim);padding:20px;text-align:center">
+                        Click "Buy" or "Short" to start paper trading with $10,000 virtual balance.
+                    </div>
+                </div>
+
+                <!-- Discussion (always below tabs) -->
                 <div id="discussionSection" class="discussion-section">
                     <div class="panel-header">
                         AI Discussion
@@ -257,6 +308,7 @@
 
     <script src="/static/sparkline.js"></script>
     <script src="/static/candlestick.js"></script>
+    <script src="/static/charts.js"></script>
     <script src="/static/app.js"></script>
 </body>
 </html>

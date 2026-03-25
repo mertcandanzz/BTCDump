@@ -115,6 +115,51 @@ class CoinManager:
         logger.info("Watchlist updated: %s", validated)
         return validated
 
+    # ── Multi-Timeframe ─────────────────────────────────
+
+    MULTI_TF = ["15m", "1h", "4h", "1d"]
+
+    def compute_multi_tf_signal(self, symbol: str) -> Dict:
+        """Compute signals across 4 timeframes for alignment analysis."""
+        results = {}
+        for tf in self.MULTI_TF:
+            try:
+                data = self.fetcher.fetch_with_cache(symbol, tf)
+                ensemble = self.pipeline.load(symbol, tf)
+                if not ensemble:
+                    ensemble = self.pipeline.train_walk_forward(
+                        data.df, symbol=symbol, interval=tf,
+                    )
+                    self.pipeline.save(ensemble)
+                pred, conf, indiv = self.pipeline.predict(ensemble, data.df)
+                enriched = indicators.compute_all(data.df.copy(), self.config.indicators)
+                current = float(data.df["close"].iloc[-1])
+                sig = self.signal_gen.generate(current, pred, conf, indiv, enriched.iloc[-1])
+                results[tf] = {
+                    "direction": sig.direction,
+                    "confidence": round(sig.confidence, 1),
+                    "change_pct": round(sig.change_pct, 2),
+                    "rsi": round(float(enriched.iloc[-1].get("RSI", 0)), 1),
+                }
+            except Exception as e:
+                results[tf] = {"direction": "ERROR", "confidence": 0, "error": str(e)}
+
+        directions = [r.get("direction", "") for r in results.values()]
+        bullish = sum(1 for d in directions if "BUY" in d)
+        bearish = sum(1 for d in directions if "SELL" in d)
+        active = len([d for d in directions if d not in ("HOLD", "ERROR", "")])
+
+        if active == 0:
+            alignment, alignment_pct = "neutral", 0
+        elif bullish > bearish:
+            alignment, alignment_pct = "bullish", round(bullish / len(self.MULTI_TF) * 100)
+        elif bearish > bullish:
+            alignment, alignment_pct = "bearish", round(bearish / len(self.MULTI_TF) * 100)
+        else:
+            alignment, alignment_pct = "mixed", 50
+
+        return {"timeframes": results, "alignment": alignment, "alignment_pct": alignment_pct}
+
     # ── Signal Computation ────────────────────────────────
 
     def compute_signal(self, symbol: str) -> Dict:
