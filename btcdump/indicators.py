@@ -487,6 +487,24 @@ def _pattern_features(df: pd.DataFrame) -> pd.DataFrame:
     streak = direction.groupby(groups).cumcount() + 1
     df["consecutive_dir"] = streak * direction
 
+    # ── Order Flow Imbalance (OFI) proxy ──
+    # Buying pressure intensity: how aggressively price moved to close
+    h, l, v = df["high"], df["low"], df["volume"]
+    full_range = (h - l).replace(0, np.nan)
+
+    # Imbalance: buy volume fraction minus sell volume fraction
+    buy_pct = (c - l) / full_range       # 0=closed at low, 1=closed at high
+    sell_pct = (h - c) / full_range       # 0=closed at high, 1=closed at low
+    raw_imbalance = (buy_pct - sell_pct) * v  # signed volume imbalance
+
+    # Cumulative Order Flow Imbalance (rolling)
+    df["ofi_14"] = raw_imbalance.rolling(14).sum() / v.rolling(14).sum().replace(0, np.nan)
+
+    # Price-Volume Divergence: strong move on weak volume or weak move on strong volume
+    ret_abs = c.pct_change().abs()
+    vol_ratio = v / v.rolling(20, min_periods=1).mean().replace(0, np.nan)
+    df["pv_divergence"] = ret_abs / vol_ratio.replace(0, np.nan)  # high = thin move, low = volume-confirmed
+
     return df
 
 

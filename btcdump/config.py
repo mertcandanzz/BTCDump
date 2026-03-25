@@ -86,6 +86,8 @@ class FeatureConfig:
         "keltner_position", "squeeze_ratio",
         # v5.0 Pro: Pattern Quantification
         "engulfing_score", "consecutive_dir",
+        # v5.0 Pro: Order Flow Proxy
+        "ofi_14", "pv_divergence",
     )
 
 
