@@ -1859,6 +1859,23 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     # +1 = full bull control, -1 = full bear control
     df["balance_of_power"] = ((c - o) / (h - l).replace(0, np.nan)).rolling(14).mean()
 
+    # ── Percentage Price Oscillator (PPO) ──
+    # Like MACD but as percentage - cross-asset comparable
+    ema12 = c.ewm(span=12, adjust=False).mean()
+    ema26 = c.ewm(span=26, adjust=False).mean()
+    df["ppo"] = ((ema12 - ema26) / ema26.replace(0, np.nan)) * 100
+    ppo_signal = df["ppo"].ewm(span=9, adjust=False).mean()
+    df["ppo_hist"] = df["ppo"] - ppo_signal
+
+    # ── Price Distance from VWAP Bands ──
+    # How many standard deviations from VWAP (like BB but volume-weighted)
+    if "VWAP" in df.columns:
+        vwap = df["VWAP"]
+        vwap_std = (c - vwap).rolling(20).std().replace(0, np.nan)
+        df["vwap_zscore"] = (c - vwap) / vwap_std
+    else:
+        df["vwap_zscore"] = 0.0
+
     return df
 
 

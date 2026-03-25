@@ -144,6 +144,7 @@ class FeatureConfig:
         "psar_dir", "chaikin_osc",
         "donchian_pos", "stoch_rsi",
         "trix", "balance_of_power",
+        "ppo", "ppo_hist", "vwap_zscore",
     )
 
 
