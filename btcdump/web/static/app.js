@@ -818,9 +818,11 @@ function switchCompareTab(tab) {
     document.querySelectorAll('.compare-tabs .filter-pill').forEach(b => b.classList.remove('active'));
     event.target.classList.add('active');
     document.getElementById('compareGridContent').style.display = tab === 'grid' ? '' : 'none';
+    document.getElementById('compareHeatmapContent').style.display = tab === 'heatmap' ? '' : 'none';
     document.getElementById('compareCorrelationContent').style.display = tab === 'correlation' ? '' : 'none';
     document.getElementById('compareScannerContent').style.display = tab === 'scanner' ? '' : 'none';
     document.getElementById('compareLeaderboardContent').style.display = tab === 'leaderboard' ? '' : 'none';
+    if (tab === 'heatmap') loadHeatmap();
     if (tab === 'correlation') loadCorrelation();
     if (tab === 'leaderboard') loadLeaderboard();
 }
@@ -898,6 +900,17 @@ async function runScanner() {
     } catch(e) {
         statusEl.textContent = 'Scanner failed';
     }
+}
+
+// ── Coin Heatmap ──
+async function loadHeatmap() {
+    try {
+        const r = await fetch('/api/coins?limit=50');
+        const j = await r.json();
+        if (j.ok && j.coins?.length) {
+            drawCoinHeatmap(document.getElementById('heatmapCanvas'), j.coins);
+        }
+    } catch(e) {}
 }
 
 // ── Correlation Matrix ──

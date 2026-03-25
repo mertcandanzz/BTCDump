@@ -104,6 +104,64 @@ function drawFeatureChart(canvas, features) {
     });
 }
 
+// ── Coin Heatmap (Treemap-style) ──
+function drawCoinHeatmap(canvas, coins) {
+    // coins: [{symbol, baseAsset, priceChangePercent, quoteVolume, direction}, ...]
+    if (!coins || !coins.length) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#0e0e16'; ctx.fillRect(0, 0, w, h);
+
+    // Sort by volume (largest first) for treemap
+    const sorted = [...coins].sort((a, b) => (b.quoteVolume || 0) - (a.quoteVolume || 0));
+    const n = sorted.length;
+
+    // Simple grid layout (close to square)
+    const cols = Math.ceil(Math.sqrt(n * w / h));
+    const rows = Math.ceil(n / cols);
+    const cellW = w / cols;
+    const cellH = h / rows;
+
+    sorted.forEach((coin, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = col * cellW;
+        const y = row * cellH;
+        const chg = parseFloat(coin.priceChangePercent) || 0;
+
+        // Color based on change %
+        let r, g, b;
+        if (chg >= 0) {
+            const intensity = Math.min(1, chg / 10); // 10% = max green
+            r = Math.round(14 + (38 - 14) * intensity);
+            g = Math.round(14 + (166 - 14) * intensity);
+            b = Math.round(22 + (154 - 22) * intensity);
+        } else {
+            const intensity = Math.min(1, Math.abs(chg) / 10);
+            r = Math.round(14 + (239 - 14) * intensity);
+            g = Math.round(14 + (83 - 14) * intensity);
+            b = Math.round(22 + (80 - 22) * intensity);
+        }
+
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
+
+        // Text
+        const name = coin.baseAsset || coin.symbol.replace('USDT', '');
+        ctx.font = `bold ${Math.min(14, cellW / 4)}px -apple-system,sans-serif`;
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.fillText(name, x + cellW / 2, y + cellH / 2 - 2);
+
+        ctx.font = `${Math.min(10, cellW / 6)}px -apple-system,sans-serif`;
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.fillText(`${chg >= 0 ? '+' : ''}${chg.toFixed(1)}%`, x + cellW / 2, y + cellH / 2 + 12);
+    });
+}
+
 // ── Correlation Heatmap ──
 function drawCorrelationHeatmap(canvas, matrix, symbols) {
     if (!matrix || !symbols || !symbols.length) return;
