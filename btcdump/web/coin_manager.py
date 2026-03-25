@@ -158,7 +158,35 @@ class CoinManager:
         else:
             alignment, alignment_pct = "mixed", 50
 
-        return {"timeframes": results, "alignment": alignment, "alignment_pct": alignment_pct}
+        # ── Confluence Score (0-100) ──
+        # Weighted by timeframe importance: 1d > 4h > 1h > 15m
+        tf_weights = {"15m": 0.1, "1h": 0.2, "4h": 0.3, "1d": 0.4}
+        confluence = 0.0
+        for tf, r in results.items():
+            w = tf_weights.get(tf, 0.25)
+            d = r.get("direction", "")
+            conf = r.get("confidence", 0)
+            if "STRONG BUY" in d:
+                confluence += w * min(100, conf * 1.2)
+            elif "BUY" in d:
+                confluence += w * conf * 0.7
+            elif "STRONG SELL" in d:
+                confluence -= w * min(100, conf * 1.2)
+            elif "SELL" in d:
+                confluence -= w * conf * 0.7
+            # HOLD contributes 0
+
+        # Normalize: confluence is -100 to +100, map to 0-100
+        # 100 = all TFs strongly bullish, 0 = all strongly bearish, 50 = neutral
+        confluence_score = round(50 + confluence / 2, 1)
+
+        return {
+            "timeframes": results,
+            "alignment": alignment,
+            "alignment_pct": alignment_pct,
+            "confluence_score": confluence_score,
+            "confluence_bias": "bullish" if confluence_score > 60 else "bearish" if confluence_score < 40 else "neutral",
+        }
 
     # ── Signal Computation ────────────────────────────────
 

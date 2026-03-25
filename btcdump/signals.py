@@ -121,6 +121,55 @@ class SignalGenerator:
     def history(self) -> List[Signal]:
         return list(self._history)
 
+    def generate_regime_adaptive(
+        self,
+        current_price: float,
+        predicted_price: float,
+        model_confidence: float,
+        individual_preds: Dict[str, float],
+        indicator_row: pd.Series,
+    ) -> Signal:
+        """Generate signal with regime-adaptive thresholds.
+
+        In trending markets: lower thresholds (easier to trigger, ride the trend)
+        In choppy markets: higher thresholds (harder to trigger, avoid whipsaws)
+        """
+        # Detect regime from indicators
+        efficiency = indicator_row.get("efficiency_ratio", 0.5)
+        adx = indicator_row.get("ADX", 25)
+        hurst = indicator_row.get("hurst_exponent", 0.5)
+
+        if pd.isna(efficiency):
+            efficiency = 0.5
+        if pd.isna(adx):
+            adx = 25
+        if pd.isna(hurst):
+            hurst = 0.5
+
+        # Regime multiplier: trending = smaller thresholds, choppy = larger
+        # Range: 0.5 (very trending) to 2.0 (very choppy)
+        trending_score = (float(efficiency) + float(hurst) + float(adx) / 50) / 3
+        regime_mult = max(0.5, min(2.0, 2.0 - trending_score * 1.5))
+
+        # Temporarily adjust thresholds
+        orig = self._config
+        self._buy = orig.buy_threshold * regime_mult
+        self._sell = orig.sell_threshold * regime_mult
+        self._strong_buy = orig.strong_buy_threshold * regime_mult
+        self._strong_sell = orig.strong_sell_threshold * regime_mult
+        self._custom_thresholds = True
+
+        # Generate signal with adjusted thresholds
+        signal = self.generate(
+            current_price, predicted_price, model_confidence,
+            individual_preds, indicator_row,
+        )
+
+        # Restore original
+        self._custom_thresholds = False
+
+        return signal
+
     def _classify(self, change_pct: float, confidence: float) -> str:
         """Classify signal direction with minimum confidence gate."""
         if confidence < self._config.min_confidence:

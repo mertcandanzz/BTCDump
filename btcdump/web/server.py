@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from btcdump import indicators
 from btcdump.config import AppConfig
 from btcdump.data import DataFetcher
 from btcdump.models import ModelPipeline
@@ -666,6 +667,203 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
             return {"ok": True, **result, "symbol": symbol}
         except Exception as e:
             return {"ok": False, "error": str(e)}
+
+    # ── Regime-Adaptive Signal ─────────────────────────────
+
+    @app.get("/api/coin/{symbol}/signal-adaptive")
+    async def get_adaptive_signal(symbol: str):
+        """Generate signal with regime-adaptive thresholds."""
+        try:
+            def _compute():
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                ensemble = state.coin_manager.ensembles.get(symbol)
+                if not ensemble:
+                    ensemble = state.pipeline.load(symbol, state.coin_manager.active_interval)
+                if not ensemble:
+                    return None
+
+                pred, conf, indiv = state.pipeline.predict(ensemble, data.df)
+                enriched = indicators.compute_all(data.df.copy(), state.config.indicators)
+                current_price = float(data.df["close"].iloc[-1])
+                row = enriched.iloc[-1]
+
+                # Standard signal
+                standard = state.signal_gen.generate(
+                    current_price, pred, conf, indiv, row,
+                )
+
+                # Regime-adaptive signal
+                adaptive = state.signal_gen.generate_regime_adaptive(
+                    current_price, pred, conf, indiv, row,
+                )
+
+                return {
+                    "standard": {
+                        "direction": standard.direction,
+                        "confidence": standard.confidence,
+                    },
+                    "adaptive": {
+                        "direction": adaptive.direction,
+                        "confidence": adaptive.confidence,
+                    },
+                    "regime_info": {
+                        "efficiency_ratio": round(float(row.get("efficiency_ratio", 0.5)), 3),
+                        "adx": round(float(row.get("ADX", 25)), 1),
+                        "hurst": round(float(row.get("hurst_exponent", 0.5)), 3),
+                    },
+                    "signals_agree": standard.direction == adaptive.direction,
+                }
+
+            result = await asyncio.to_thread(_compute)
+            if not result:
+                return {"ok": False, "error": "No model. Refresh first."}
+            return {"ok": True, "symbol": symbol, **result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Smart Multi-Condition Alerts ──────────────────────
+
+    @app.post("/api/smart-alerts")
+    async def add_smart_alert(body: dict):
+        """Create multi-condition alert.
+
+        Body: {symbol, conditions: [{field, operator, value}, ...], name}
+        Example: {symbol: "BTCUSDT", conditions: [
+            {field: "rsi", operator: "<", value: 30},
+            {field: "volume_ratio", operator: ">", value: 2}
+        ], name: "RSI oversold + volume spike"}
+        """
+        symbol = body.get("symbol", "").upper()
+        conditions = body.get("conditions", [])
+        name = body.get("name", "Custom Alert")
+
+        if not conditions:
+            return {"ok": False, "error": "No conditions provided"}
+
+        alert_id = f"smart-{symbol}-{int(datetime.now().timestamp())}"
+        smart_alert = {
+            "id": alert_id,
+            "symbol": symbol,
+            "name": name,
+            "conditions": conditions,
+            "created": datetime.now().isoformat(),
+            "triggered": False,
+        }
+
+        if not hasattr(state, "_smart_alerts"):
+            state._smart_alerts = []
+        state._smart_alerts.append(smart_alert)
+
+        return {"ok": True, "alert": smart_alert}
+
+    @app.get("/api/smart-alerts")
+    async def get_smart_alerts():
+        alerts = getattr(state, "_smart_alerts", [])
+        return {"ok": True, "alerts": alerts}
+
+    @app.post("/api/smart-alerts/check")
+    async def check_smart_alerts():
+        """Check all smart alerts against current data."""
+        alerts = getattr(state, "_smart_alerts", [])
+        if not alerts:
+            return {"ok": True, "triggered": []}
+
+        triggered = []
+        for alert in alerts:
+            if alert.get("triggered"):
+                continue
+            symbol = alert["symbol"]
+            cached = state.coin_manager.signal_cache.get(symbol, {})
+            if not cached:
+                continue
+
+            all_met = True
+            for cond in alert["conditions"]:
+                field = cond.get("field", "")
+                op = cond.get("operator", "")
+                val = cond.get("value", 0)
+
+                actual = cached.get(field, 0)
+                if actual == 0 and field == "rsi":
+                    actual = cached.get("rsi", 50)
+
+                try:
+                    actual = float(actual)
+                    val = float(val)
+                except (ValueError, TypeError):
+                    all_met = False
+                    break
+
+                if op == ">" and not (actual > val):
+                    all_met = False
+                    break
+                elif op == "<" and not (actual < val):
+                    all_met = False
+                    break
+                elif op == ">=" and not (actual >= val):
+                    all_met = False
+                    break
+                elif op == "<=" and not (actual <= val):
+                    all_met = False
+                    break
+                elif op == "==" and not (abs(actual - val) < 0.01):
+                    all_met = False
+                    break
+
+            if all_met:
+                alert["triggered"] = True
+                triggered.append(alert)
+
+        return {"ok": True, "triggered": triggered}
+
+    # ── Auto-Feature Analysis ────────────────────────────
+
+    @app.get("/api/feature-analysis")
+    async def feature_analysis():
+        """Analyze feature quality: importance distribution, correlation clusters."""
+        ens = state.coin_manager.active_ensemble
+        if not ens or not ens.feature_importances:
+            return {"ok": False, "error": "No model trained yet."}
+
+        names = ens.feature_names
+        importances = ens.feature_importances
+
+        pairs = list(zip(names, importances))
+        pairs.sort(key=lambda x: x[1], reverse=True)
+
+        # Top features that contribute 80% of importance
+        total = sum(importances)
+        cumulative = 0
+        core_features = []
+        for name, imp in pairs:
+            cumulative += imp
+            core_features.append(name)
+            if cumulative >= total * 0.8:
+                break
+
+        # Bottom features (< 0.5% each)
+        noise_features = [n for n, i in pairs if i < total * 0.005]
+
+        # Concentration: how concentrated is importance in top features
+        top_10_share = sum(i for _, i in pairs[:10]) / total * 100 if total > 0 else 0
+
+        return {
+            "ok": True,
+            "total_features": len(names),
+            "core_features": core_features,
+            "core_count": len(core_features),
+            "noise_features": noise_features,
+            "noise_count": len(noise_features),
+            "top_10_share_pct": round(top_10_share, 1),
+            "concentration": "high" if top_10_share > 60 else "moderate" if top_10_share > 40 else "distributed",
+            "recommendation": (
+                f"Top {len(core_features)} features explain 80% of predictions. "
+                f"{len(noise_features)} features contribute <0.5% each and could be pruned "
+                f"to reduce overfitting risk."
+            ),
+        }
 
     # ── Correlation Breakdown Detection ─────────────────────
 
