@@ -18,8 +18,14 @@ const TVChart = (() => {
     let _mouseX=-1, _mouseY=-1, _hoverIdx=-1;
     let _dragging=false, _dragStartX=0, _dragStartView=0;
     let _rulerActive=false, _rulerStart=null, _rulerEnd=null;
+    let _srLevels=[]; // support/resistance levels
     let _w=0, _h=0, _dpr=1;
     const PAD_R=72, PAD_T=8, PAD_B=26;
+
+    function setSRLevels(levels) {
+        _srLevels = levels || [];
+        if (_canvas) render();
+    }
 
     function init(canvas, candles) {
         _canvas = canvas;
@@ -117,6 +123,26 @@ const TVChart = (() => {
         const ema21 = calcEMA(candles.map(c=>c.c),21);
         drawLine(ctx,candles,ema9,py,gap,C.ema9,1.2);
         drawLine(ctx,candles,ema21,py,gap,C.ema21,1.2);
+
+        // Support / Resistance lines
+        if (_srLevels.length) {
+            _srLevels.forEach(sr => {
+                if (sr.price < minP || sr.price > maxP) return;
+                const y = Math.round(py(sr.price)) + 0.5;
+                const isSup = sr.type === 'support';
+                ctx.setLineDash([6, 4]);
+                ctx.strokeStyle = isSup ? 'rgba(38,166,154,0.6)' : 'rgba(239,83,80,0.6)';
+                ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(chartW, y); ctx.stroke();
+                ctx.setLineDash([]);
+                // Label
+                ctx.font = '9px -apple-system,sans-serif';
+                ctx.fillStyle = isSup ? 'rgba(38,166,154,0.8)' : 'rgba(239,83,80,0.8)';
+                ctx.textAlign = 'left';
+                const label = `${isSup ? 'S' : 'R'} $${fmtP(sr.price)} (${sr.touches}x)`;
+                ctx.fillText(label, 4, y - 3);
+            });
+        }
 
         // Candles
         candles.forEach((c,i) => {
@@ -300,7 +326,7 @@ const TVChart = (() => {
     function fmtP(p) { if(p>=10000) return p.toLocaleString(undefined,{maximumFractionDigits:0}); if(p>=1000) return p.toLocaleString(undefined,{maximumFractionDigits:1}); if(p>=1) return p.toFixed(2); if(p>=0.01) return p.toFixed(4); return p.toFixed(6); }
     function fmtVol(v) { if(v>=1e9) return (v/1e9).toFixed(1)+'B'; if(v>=1e6) return (v/1e6).toFixed(1)+'M'; if(v>=1e3) return (v/1e3).toFixed(1)+'K'; return v.toFixed(0); }
 
-    return { init, render };
+    return { init, render, setSRLevels };
 })();
 
 function drawCandlestick(canvas, candles) {

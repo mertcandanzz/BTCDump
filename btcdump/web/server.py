@@ -193,6 +193,67 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Correlation Matrix ──────────────────────────────────
+
+    @app.get("/api/correlation")
+    async def get_correlation():
+        try:
+            data = await asyncio.to_thread(state.coin_manager.compute_correlation_matrix)
+            return {"ok": True, **data}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Support / Resistance ─────────────────────────────
+
+    @app.get("/api/coin/{symbol}/sr-levels")
+    async def get_sr_levels(symbol: str):
+        try:
+            def _compute():
+                from btcdump.indicators import detect_support_resistance
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                return detect_support_resistance(data.df)
+            levels = await asyncio.to_thread(_compute)
+            return {"ok": True, "levels": levels, "symbol": symbol}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ── Fear & Greed Index ───────────────────────────────
+
+    @app.get("/api/fear-greed")
+    async def get_fear_greed():
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5) as client:
+                r = await client.get("https://api.alternative.me/fng/?limit=1")
+                d = r.json()
+                entry = d.get("data", [{}])[0]
+                return {
+                    "ok": True,
+                    "value": int(entry.get("value", 50)),
+                    "classification": entry.get("value_classification", "Neutral"),
+                    "timestamp": entry.get("timestamp", ""),
+                }
+        except Exception as e:
+            return {"ok": True, "value": 50, "classification": "Unavailable", "error": str(e)}
+
+    # ── Anomaly Detection ────────────────────────────────
+
+    @app.get("/api/coin/{symbol}/anomalies")
+    async def get_anomalies(symbol: str):
+        try:
+            def _detect():
+                from btcdump.indicators import detect_anomalies
+                data = state.coin_manager.fetcher.fetch_with_cache(
+                    symbol, state.coin_manager.active_interval,
+                )
+                return detect_anomalies(data.df)
+            result = await asyncio.to_thread(_detect)
+            return {"ok": True, **result, "symbol": symbol}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── LLM Providers ─────────────────────────────────────
 
     @app.get("/api/providers")

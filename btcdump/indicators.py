@@ -288,3 +288,97 @@ def _derived_features(df: pd.DataFrame) -> pd.DataFrame:
         df["vwap_dist"] = 0.0
 
     return df
+
+
+# ---------------------------------------------------------------------------
+# Support / Resistance detection
+# ---------------------------------------------------------------------------
+
+def detect_support_resistance(
+    df: pd.DataFrame, window: int = 10, threshold_pct: float = 0.3,
+) -> list[dict]:
+    """Detect support and resistance levels by finding pivot highs/lows
+    and clustering nearby levels together."""
+    if len(df) < window * 2:
+        return []
+
+    highs = df["high"].values
+    lows = df["low"].values
+    pivots: list[dict] = []
+
+    half = window // 2
+    for i in range(half, len(df) - half):
+        # Pivot high: local max in window
+        if highs[i] == max(highs[i - half : i + half + 1]):
+            pivots.append({"price": float(highs[i]), "type": "resistance", "idx": i})
+        # Pivot low: local min in window
+        if lows[i] == min(lows[i - half : i + half + 1]):
+            pivots.append({"price": float(lows[i]), "type": "support", "idx": i})
+
+    if not pivots:
+        return []
+
+    # Cluster nearby pivots (within threshold_pct of each other)
+    pivots.sort(key=lambda x: x["price"])
+    clusters: list[list[dict]] = [[pivots[0]]]
+    for p in pivots[1:]:
+        last_avg = np.mean([x["price"] for x in clusters[-1]])
+        if abs(p["price"] - last_avg) / last_avg * 100 < threshold_pct:
+            clusters[-1].append(p)
+        else:
+            clusters.append([p])
+
+    current_price = float(df["close"].iloc[-1])
+    results = []
+    for cluster in clusters:
+        avg_price = float(np.mean([x["price"] for x in cluster]))
+        touches = len(cluster)
+        # Determine type by majority
+        supports = sum(1 for x in cluster if x["type"] == "support")
+        level_type = "support" if supports > len(cluster) / 2 else "resistance"
+        strength = min(5, touches)  # 1-5 scale
+        results.append({
+            "price": round(avg_price, 6),
+            "type": level_type,
+            "touches": touches,
+            "strength": strength,
+            "distance_pct": round((avg_price - current_price) / current_price * 100, 2),
+        })
+
+    # Sort by distance from current price
+    results.sort(key=lambda x: abs(x["distance_pct"]))
+    return results[:10]  # Top 10 nearest
+
+
+# ---------------------------------------------------------------------------
+# Anomaly detection
+# ---------------------------------------------------------------------------
+
+def detect_anomalies(df: pd.DataFrame) -> dict:
+    """Detect volume and price anomalies using z-scores."""
+    if len(df) < 50:
+        return {"volume_anomaly": False, "price_anomaly": False,
+                "volume_zscore": 0, "price_zscore": 0, "description": "Insufficient data"}
+
+    vol = df["volume"]
+    vol_mean = vol.rolling(50).mean().iloc[-1]
+    vol_std = vol.rolling(50).std().iloc[-1]
+    vol_z = float((vol.iloc[-1] - vol_mean) / vol_std) if vol_std > 0 else 0
+
+    ret = df["close"].pct_change()
+    ret_std = ret.rolling(50).std().iloc[-1]
+    ret_z = float(abs(ret.iloc[-1]) / ret_std) if ret_std > 0 else 0
+
+    descriptions = []
+    if abs(vol_z) > 3:
+        descriptions.append(f"Volume {vol_z:.1f}x normal")
+    if ret_z > 3:
+        descriptions.append(f"Price move {ret_z:.1f}x normal")
+
+    return {
+        "volume_anomaly": bool(abs(vol_z) > 3),
+        "volume_zscore": round(vol_z, 2),
+        "price_anomaly": bool(ret_z > 3),
+        "price_zscore": round(ret_z, 2),
+        "description": " | ".join(descriptions) if descriptions else "No anomalies",
+    }

@@ -311,6 +311,36 @@ class CoinManager:
 
         return overview
 
+    # ── Correlation Matrix ─────────────────────────────────
+
+    def compute_correlation_matrix(self) -> dict:
+        """Compute Pearson correlation matrix of watchlist coin returns."""
+        import pandas as pd
+
+        returns_map = {}
+        for symbol in self.watchlist:
+            try:
+                data = self.fetcher.fetch_with_cache(symbol, self.active_interval)
+                closes = data.df["close"].tail(100).pct_change().dropna()
+                returns_map[symbol] = closes.values
+            except Exception:
+                continue
+
+        if len(returns_map) < 2:
+            return {"matrix": {}, "symbols": []}
+
+        # Align lengths
+        min_len = min(len(v) for v in returns_map.values())
+        df = pd.DataFrame({k: v[-min_len:] for k, v in returns_map.items()})
+        corr = df.corr()
+
+        symbols = list(corr.columns)
+        matrix = {}
+        for s in symbols:
+            matrix[s] = {s2: round(float(corr.loc[s, s2]), 3) for s2 in symbols}
+
+        return {"matrix": matrix, "symbols": symbols}
+
     def get_compare_context(self) -> str:
         """Build a summary string of watchlist for AI chat context."""
         lines = [f"WATCHLIST COMPARISON ({self.active_interval} timeframe):"]

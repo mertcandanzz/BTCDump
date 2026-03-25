@@ -27,7 +27,7 @@
     <!-- Header -->
     <header id="header">
         <div class="header-left">
-            <h1>BTCDump<span class="version">4.1</span></h1>
+            <h1>BTCDump<span class="version">5.0</span></h1>
             <div class="mode-toggle">
                 <button class="mode-toggle-btn active" id="modeSingle" onclick="switchMode('single')">Analysis</button>
                 <button class="mode-toggle-btn" id="modeCompare" onclick="switchMode('compare')">Compare</button>
@@ -49,6 +49,11 @@
                 <button class="tf-pill" data-tf="4h">4h</button>
                 <button class="tf-pill" data-tf="1d">1D</button>
                 <button class="tf-pill" data-tf="1w">1W</button>
+            </div>
+            <div class="fng-badge" id="fngBadge" title="Fear & Greed Index">
+                <span class="fng-label">F&G</span>
+                <span class="fng-value" id="fngValue">--</span>
+                <span class="fng-class" id="fngClass"></span>
             </div>
             <div class="header-actions">
                 <div class="auto-refresh-wrap">
@@ -160,6 +165,17 @@
             <!-- Compare Mode -->
             <div id="watchlistManager" style="display:none">
                 <div class="panel-header">Watchlist <span class="panel-hint" id="watchlistCount">0/15</span></div>
+                <div class="preset-bar" style="padding:4px 10px;display:flex;gap:4px;flex-wrap:wrap">
+                    <select id="presetSelect" class="preset-select" onchange="applyPreset(this.value)">
+                        <option value="">Presets...</option>
+                        <option value="top10">Top 10 by Volume</option>
+                        <option value="defi">DeFi Blue Chips</option>
+                        <option value="layer2">Layer 2</option>
+                        <option value="meme">Meme Coins</option>
+                        <option value="ai">AI & Gaming</option>
+                    </select>
+                    <button class="btn btn-sm" onclick="saveCustomPreset()">Save Current</button>
+                </div>
                 <div class="watchlist-search">
                     <input type="text" id="watchlistSearchInput" placeholder="Add coin..." oninput="onWatchlistSearch(this.value)" autocomplete="off">
                     <div id="watchlistSearchDrop" class="coin-search-dropdown" style="display:none"></div>
@@ -256,6 +272,10 @@
             <div id="compareModeContent" style="display:none">
                 <div class="compare-toolbar">
                     <span class="compare-title">Multi-Coin Comparison</span>
+                    <div class="compare-tabs">
+                        <button class="filter-pill active" onclick="switchCompareTab('grid')">Grid</button>
+                        <button class="filter-pill" onclick="switchCompareTab('correlation')">Correlation</button>
+                    </div>
                     <div class="compare-filters">
                         <button class="filter-pill active" onclick="setSignalFilter('all')">All</button>
                         <button class="filter-pill" onclick="setSignalFilter('buy')">Buys</button>
@@ -264,7 +284,16 @@
                     <span id="compareProgress" class="panel-hint"></span>
                     <button class="btn btn-sm" onclick="refreshWatchlist()">Refresh All</button>
                 </div>
-                <div id="comparisonGrid" class="comparison-grid-wrap"></div>
+                <div id="compareGridContent">
+                    <div id="comparisonGrid" class="comparison-grid-wrap"></div>
+                </div>
+                <div id="compareCorrelationContent" style="display:none">
+                    <div style="padding:8px 14px;display:flex;align-items:center;gap:8px">
+                        <button class="btn btn-primary btn-sm" onclick="loadCorrelation()">Load Correlation</button>
+                        <span class="panel-hint">Returns correlation between watchlist coins</span>
+                    </div>
+                    <canvas id="correlationCanvas" style="width:100%;height:400px"></canvas>
+                </div>
             </div>
         </section>
     </main>

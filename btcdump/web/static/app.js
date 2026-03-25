@@ -272,6 +272,7 @@ async function loadCandlestickChart(sym){
         if(j.ok&&j.candles?.length>1){drawCandlestick(document.getElementById('candlestickChart'),j.candles);
             const last=j.candles[j.candles.length-1],prev=j.candles[j.candles.length-2];
             const pe=document.getElementById('chartPrice');pe.textContent='$'+fmtP(last.c);pe.className='chart-live-price '+(last.c>=prev.c?'up':'down');
+            loadSRLevels(sym);
         }
     }catch(e){}
 }
@@ -584,11 +585,125 @@ async function loadPortfolio() {
     } catch(e) {}
 }
 
+// ── Watchlist Presets ──
+const PRESETS = {
+    top10: ["BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","AVAXUSDT","TRXUSDT","LINKUSDT"],
+    defi: ["UNIUSDT","AAVEUSDT","MKRUSDT","CRVUSDT","SUSHIUSDT","COMPUSDT"],
+    layer2: ["ARBUSDT","OPUSDT","MATICUSDT","STRKUSDT","IMXUSDT"],
+    meme: ["DOGEUSDT","SHIBUSDT","PEPEUSDT","FLOKIUSDT","BONKUSDT","WIFUSDT"],
+    ai: ["FETUSDT","RENDERUSDT","AXSUSDT","SANDUSDT","MANAUSDT"],
+};
+
+function applyPreset(key) {
+    if (!key) return;
+    // Check custom presets first
+    const custom = JSON.parse(localStorage.getItem('btcdump_presets') || '{}');
+    const coins = custom[key] || PRESETS[key];
+    if (!coins) return;
+    watchlist = [...coins];
+    saveWL(); renderWatchlistMgr(); syncWL();
+    toast(`Preset applied: ${coins.length} coins`, 'success');
+    document.getElementById('presetSelect').value = '';
+    loadWatchlistOverview();
+}
+
+function saveCustomPreset() {
+    const name = prompt('Preset name:');
+    if (!name) return;
+    const custom = JSON.parse(localStorage.getItem('btcdump_presets') || '{}');
+    custom[name] = [...watchlist];
+    localStorage.setItem('btcdump_presets', JSON.stringify(custom));
+    // Add to select
+    const sel = document.getElementById('presetSelect');
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    sel.appendChild(opt);
+    toast(`Preset "${name}" saved`, 'success');
+}
+
+// Load custom presets into dropdown on init
+function loadCustomPresets() {
+    const custom = JSON.parse(localStorage.getItem('btcdump_presets') || '{}');
+    const sel = document.getElementById('presetSelect');
+    if (!sel) return;
+    for (const name of Object.keys(custom)) {
+        const opt = document.createElement('option');
+        opt.value = name; opt.textContent = name;
+        sel.appendChild(opt);
+    }
+}
+
+// ── Compare Tab Switching ──
+function switchCompareTab(tab) {
+    document.querySelectorAll('.compare-tabs .filter-pill').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('compareGridContent').style.display = tab === 'grid' ? '' : 'none';
+    document.getElementById('compareCorrelationContent').style.display = tab === 'correlation' ? '' : 'none';
+    if (tab === 'correlation') loadCorrelation();
+}
+
+// ── Correlation Matrix ──
+async function loadCorrelation() {
+    try {
+        const r = await fetch('/api/correlation');
+        const j = await r.json();
+        if (j.ok && j.symbols?.length) {
+            drawCorrelationHeatmap(document.getElementById('correlationCanvas'), j.matrix, j.symbols);
+        } else {
+            toast(j.error || 'Need 2+ coins in watchlist', 'error');
+        }
+    } catch(e) { toast('Correlation load failed', 'error'); }
+}
+
+// ── S/R Levels ──
+async function loadSRLevels(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/sr-levels`);
+        const j = await r.json();
+        if (j.ok && j.levels?.length) {
+            TVChart.setSRLevels(j.levels);
+        }
+    } catch(e) {}
+}
+
+// ── Fear & Greed ──
+async function loadFearGreed() {
+    try {
+        const r = await fetch('/api/fear-greed');
+        const j = await r.json();
+        if (!j.ok && !j.value) return;
+        const badge = document.getElementById('fngBadge');
+        const valEl = document.getElementById('fngValue');
+        const clsEl = document.getElementById('fngClass');
+        valEl.textContent = j.value;
+        clsEl.textContent = j.classification;
+        // Color class
+        badge.className = 'fng-badge';
+        if (j.value <= 25) badge.classList.add('extreme-fear');
+        else if (j.value <= 40) badge.classList.add('fear');
+        else if (j.value <= 60) badge.classList.add('neutral');
+        else if (j.value <= 75) badge.classList.add('greed');
+        else badge.classList.add('extreme-greed');
+    } catch(e) {}
+}
+
+// ── Anomaly Detection ──
+async function checkAnomalies(sym) {
+    try {
+        const r = await fetch(`/api/coin/${sym || activeSymbol}/anomalies`);
+        const j = await r.json();
+        if (j.ok && (j.volume_anomaly || j.price_anomaly)) {
+            toast(`Anomaly: ${j.description}`, 'error');
+        }
+    } catch(e) {}
+}
+
 // ── Init ──
 async function init(){
     try{const r=await fetch('/api/providers');providerStatus=await r.json();}catch(e){}
     try{const r=await fetch('/api/signal/cached');const j=await r.json();if(j.ok&&j.data?.current_price)updateSignalUI(j.data);}catch(e){}
     await syncWL(); loadTickerStrip(); loadCandlestickChart(); updateFcContext(); connectWS();
+    loadFearGreed(); loadCustomPresets(); checkAnomalies();
     addDiscMsg('system','BTCDump v5.0 | Ctrl+K: search | S/C: mode | R: refresh | Live prices active');
 }
 init();
