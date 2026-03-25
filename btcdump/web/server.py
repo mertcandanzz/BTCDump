@@ -944,6 +944,88 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
             return {"ok": True, "symbol": symbol, "current_rate": 0, "annual_rate": 0,
                     "sentiment": "unavailable", "history": [], "note": str(e)}
 
+    # ── Open Interest ─────────────────────────────────────
+
+    @app.get("/api/coin/{symbol}/open-interest")
+    async def get_open_interest(symbol: str):
+        """Get open interest from Binance Futures."""
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5) as client:
+                # Current OI
+                r = await client.get(f"https://fapi.binance.com/fapi/v1/openInterest?symbol={symbol}")
+                current = r.json()
+
+                # OI history (last 30 periods)
+                r2 = await client.get(
+                    f"https://fapi.binance.com/futures/data/openInterestHist?symbol={symbol}&period=1h&limit=30"
+                )
+                history = r2.json() if r2.status_code == 200 else []
+
+                oi = float(current.get("openInterest", 0))
+                oi_values = [float(h.get("sumOpenInterest", 0)) for h in history] if history else []
+
+                # OI change
+                oi_change = 0
+                if len(oi_values) >= 2:
+                    oi_change = round((oi_values[-1] - oi_values[0]) / oi_values[0] * 100, 2) if oi_values[0] > 0 else 0
+
+                return {
+                    "ok": True,
+                    "symbol": symbol,
+                    "open_interest": oi,
+                    "oi_change_pct": oi_change,
+                    "interpretation": (
+                        "Rising OI + Rising Price = New longs (bullish)" if oi_change > 5 else
+                        "Falling OI + Rising Price = Short covering" if oi_change < -5 else
+                        "Stable OI"
+                    ),
+                    "history": [{"oi": float(h.get("sumOpenInterest", 0)), "time": h.get("timestamp", 0)} for h in history[-10:]],
+                }
+        except Exception as e:
+            return {"ok": True, "symbol": symbol, "open_interest": 0, "oi_change_pct": 0,
+                    "interpretation": "unavailable", "history": [], "note": str(e)}
+
+    # ── Market Summary ───────────────────────────────────
+
+    @app.get("/api/market-summary")
+    async def market_summary():
+        """Quick market overview: BTC dominance proxy, total market sentiment."""
+        try:
+            tickers = state.coin_manager.fetcher.fetch_tickers()
+            total_vol = sum(float(t.get("quoteVolume", 0)) for t in tickers)
+            btc_vol = next((float(t.get("quoteVolume", 0)) for t in tickers if t["symbol"] == "BTCUSDT"), 0)
+            eth_vol = next((float(t.get("quoteVolume", 0)) for t in tickers if t["symbol"] == "ETHUSDT"), 0)
+
+            gainers = sum(1 for t in tickers if float(t.get("priceChangePercent", 0)) > 0)
+            losers = len(tickers) - gainers
+            avg_change = sum(float(t.get("priceChangePercent", 0)) for t in tickers) / len(tickers) if tickers else 0
+
+            # Top gainers and losers
+            sorted_tickers = sorted(tickers, key=lambda t: float(t.get("priceChangePercent", 0)), reverse=True)
+            top_gainers = [{
+                "symbol": t["symbol"], "baseAsset": t.get("baseAsset", ""),
+                "change": round(float(t.get("priceChangePercent", 0)), 2),
+            } for t in sorted_tickers[:5]]
+            top_losers = [{
+                "symbol": t["symbol"], "baseAsset": t.get("baseAsset", ""),
+                "change": round(float(t.get("priceChangePercent", 0)), 2),
+            } for t in sorted_tickers[-5:]]
+
+            return {
+                "ok": True,
+                "total_pairs": len(tickers),
+                "gainers": gainers,
+                "losers": losers,
+                "avg_change_pct": round(avg_change, 2),
+                "market_sentiment": "bullish" if gainers > losers * 1.5 else "bearish" if losers > gainers * 1.5 else "neutral",
+                "btc_volume_dominance": round(btc_vol / total_vol * 100, 1) if total_vol else 0,
+                "top_gainers": top_gainers,
+                "top_losers": top_losers,
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── Regime-Adaptive Signal ─────────────────────────────
 
     @app.get("/api/coin/{symbol}/signal-adaptive")
