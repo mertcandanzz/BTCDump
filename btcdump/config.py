@@ -119,6 +119,8 @@ class FeatureConfig:
         "transfer_entropy", "mutual_info_pv",
         # v5.0 Pro: Complexity
         "approx_entropy", "sample_entropy_proxy",
+        # v5.0 Pro: Detrended Fluctuation Analysis
+        "dfa_exponent",
     )
 
 

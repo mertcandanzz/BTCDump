@@ -52,6 +52,7 @@ def compute_all(df: pd.DataFrame, config: IndicatorConfig) -> pd.DataFrame:
     df = _cycle_features(df)
     df = _information_theory_features(df)
     df = _complexity_features(df)
+    df = _dfa_feature(df)
     return df.copy()  # final defragment
 
 
@@ -1337,6 +1338,69 @@ def _complexity_features(df: pd.DataFrame) -> pd.DataFrame:
     # High ratio = short-term vol diverging from long-term = less predictable
     df["sample_entropy_proxy"] = (short_std / long_std).fillna(1.0)
 
+    return df
+
+
+def _dfa_feature(df: pd.DataFrame) -> pd.DataFrame:
+    """Detrended Fluctuation Analysis (DFA) exponent.
+
+    DFA is the gold standard for measuring long-range correlations
+    in non-stationary time series. Unlike Hurst, it's robust to
+    trends and non-stationarity in the data.
+
+    alpha < 0.5: anti-correlated (mean-reverting)
+    alpha = 0.5: uncorrelated (random walk)
+    alpha > 0.5: long-range correlated (trending)
+    alpha = 1.0: 1/f noise (pink noise)
+    alpha > 1.0: non-stationary, unbounded
+    """
+    c = df["close"]
+    ret = c.pct_change().fillna(0).values
+
+    window = 100
+    dfa_vals = np.zeros(len(df))
+
+    for i in range(window, len(df)):
+        chunk = ret[i - window:i]
+        n = len(chunk)
+
+        # Integrate: cumulative sum of (x - mean)
+        y = np.cumsum(chunk - chunk.mean())
+
+        # DFA: compute fluctuation at multiple box sizes
+        box_sizes = [4, 8, 16, 32]
+        fluctuations = []
+
+        for box in box_sizes:
+            if box >= n:
+                continue
+            n_boxes = n // box
+            if n_boxes < 2:
+                continue
+
+            f_sum = 0
+            for b in range(n_boxes):
+                segment = y[b * box:(b + 1) * box]
+                # Linear detrend
+                x_axis = np.arange(box)
+                if len(segment) != box:
+                    continue
+                coeffs = np.polyfit(x_axis, segment, 1)
+                trend = np.polyval(coeffs, x_axis)
+                residual = segment - trend
+                f_sum += np.sqrt(np.mean(residual ** 2))
+
+            fluctuations.append((np.log(box), np.log(f_sum / n_boxes + 1e-10)))
+
+        if len(fluctuations) >= 2:
+            log_n = np.array([f[0] for f in fluctuations])
+            log_f = np.array([f[1] for f in fluctuations])
+            # DFA exponent = slope of log-log plot
+            if np.std(log_n) > 0:
+                alpha = float(np.polyfit(log_n, log_f, 1)[0])
+                dfa_vals[i] = max(0, min(2, alpha))
+
+    df["dfa_exponent"] = dfa_vals
     return df
 
 
