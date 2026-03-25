@@ -1950,6 +1950,28 @@ def _final_features(df: pd.DataFrame) -> pd.DataFrame:
     vol_change = v.diff()
     df["vol_price_confirm"] = price_dir.rolling(10).corr(vol_change)
 
+    # ── Ehlers Instantaneous Trendline ──
+    # Zero-lag adaptive filter using DSP principles
+    it = pd.Series(0.0, index=df.index)
+    prices = c.values.astype(float)
+    for i in range(7, len(prices)):
+        it.iloc[i] = (
+            (4 * prices[i] + 3 * prices[i-1] + 2 * prices[i-2] + prices[i-3]) / 10.0 * 0.5 +
+            it.iloc[i-1] * 0.5
+        )
+    df["ehlers_it_dist"] = (c - it) / c.replace(0, np.nan) * 100
+
+    # ── Range Intensity ──
+    # What fraction of the 20-bar range was actively traded in last 5 bars
+    range_20 = (h.rolling(20).max() - l.rolling(20).min()).replace(0, np.nan)
+    range_5 = h.rolling(5).max() - l.rolling(5).min()
+    df["range_intensity"] = range_5 / range_20
+
+    # ── Median Price Deviation ──
+    # Distance from rolling median (more robust than mean)
+    median_20 = c.rolling(20).median()
+    df["median_dev"] = (c - median_20) / c.replace(0, np.nan) * 100
+
     return df
 
 
