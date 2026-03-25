@@ -130,6 +130,51 @@ const TVChart = (() => {
         drawLine(ctx,candles,ema9,py,gap,C.ema9,1.2);
         drawLine(ctx,candles,ema21,py,gap,C.ema21,1.2);
 
+        // Ichimoku Cloud (if enough candles)
+        if (candles.length >= 52) {
+            const tenkan = [], kijun = [], senkouA = [], senkouB = [];
+            for (let i = 0; i < candles.length; i++) {
+                // Tenkan-sen (9-period midpoint)
+                if (i >= 8) {
+                    let hh = -Infinity, ll = Infinity;
+                    for (let j = i - 8; j <= i; j++) { hh = Math.max(hh, candles[j].h); ll = Math.min(ll, candles[j].l); }
+                    tenkan[i] = (hh + ll) / 2;
+                }
+                // Kijun-sen (26-period midpoint)
+                if (i >= 25) {
+                    let hh = -Infinity, ll = Infinity;
+                    for (let j = i - 25; j <= i; j++) { hh = Math.max(hh, candles[j].h); ll = Math.min(ll, candles[j].l); }
+                    kijun[i] = (hh + ll) / 2;
+                }
+                // Senkou Span A = (tenkan + kijun) / 2, shifted 26 ahead
+                if (tenkan[i] && kijun[i]) {
+                    const saIdx = i; // render at current position (already shifted in view)
+                    senkouA[saIdx] = (tenkan[i] + kijun[i]) / 2;
+                }
+                // Senkou Span B (52-period midpoint)
+                if (i >= 51) {
+                    let hh = -Infinity, ll = Infinity;
+                    for (let j = i - 51; j <= i; j++) { hh = Math.max(hh, candles[j].h); ll = Math.min(ll, candles[j].l); }
+                    senkouB[i] = (hh + ll) / 2;
+                }
+            }
+
+            // Draw cloud (filled area between Senkou A and B)
+            ctx.globalAlpha = 0.08;
+            for (let i = 52; i < candles.length; i++) {
+                if (!senkouA[i] || !senkouB[i]) continue;
+                const x = i * gap + gap / 2;
+                const yA = py(senkouA[i]), yB = py(senkouB[i]);
+                ctx.fillStyle = senkouA[i] > senkouB[i] ? C.green : C.red;
+                ctx.fillRect(x - gap/2, Math.min(yA, yB), gap, Math.abs(yA - yB));
+            }
+            ctx.globalAlpha = 1;
+
+            // Draw Tenkan (thin orange) and Kijun (thin blue)
+            drawLine(ctx, candles, tenkan, py, gap, '#ff6d00', 0.8);
+            drawLine(ctx, candles, kijun, py, gap, '#2979ff', 0.8);
+        }
+
         // Support / Resistance lines
         if (_srLevels.length) {
             _srLevels.forEach(sr => {
@@ -207,6 +252,7 @@ const TVChart = (() => {
         ctx.font='10px -apple-system,sans-serif'; ctx.textAlign='left';
         ctx.fillStyle=C.ema9; ctx.fillText('EMA 9',8,PAD_T+14);
         ctx.fillStyle=C.ema21; ctx.fillText('EMA 21',56,PAD_T+14);
+        if(candles.length>=52){ctx.fillStyle='#ff6d00';ctx.fillText('Tenkan',110,PAD_T+14);ctx.fillStyle='#2979ff';ctx.fillText('Kijun',158,PAD_T+14);}
         // Zoom hint
         ctx.fillStyle=C.text; ctx.textAlign='right';
         ctx.fillText(`${candles.length} candles | Scroll:zoom  Drag:pan  DblClick:ruler`, chartW-4, PAD_T+14);
