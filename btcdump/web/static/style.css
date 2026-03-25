@@ -208,7 +208,6 @@ main.dashboard-mode #leftPanel{display:none}
 .center-tab::after{content:'';position:absolute;bottom:-2px;left:50%;width:0;height:2px;background:var(--accent);transition:all var(--transition-base);transform:translateX(-50%);border-radius:1px}
 .center-tab.active::after{width:100%}
 .tab-content{animation:tabFadeIn var(--transition-base) ease-out}
-@keyframes tabFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 
 /* ── Backtest UI ── */
 .bt-toolbar{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -507,27 +506,135 @@ main.dashboard-mode #leftPanel{display:none}
 ::-webkit-scrollbar-corner{background:transparent}
 *{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
 
-/* ── Loading Overlay ── */
-.loading-overlay{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,10,15,0.85);backdrop-filter:blur(6px);opacity:0;transition:opacity .2s ease;pointer-events:none}
+/* ══════════════════════════════════════════════════════
+   v5.0 PRODUCTION ADDITIONS
+   ══════════════════════════════════════════════════════ */
+
+/* ── Global Loading Overlay ── */
+.loading-overlay{position:fixed;inset:0;z-index:5000;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,10,15,0.92);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);gap:16px;opacity:1;transition:opacity var(--transition-slow);pointer-events:all}
+.loading-overlay.hidden{opacity:0;pointer-events:none}
 .loading-overlay.visible{opacity:1;pointer-events:all}
-.loading-spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+.loading-overlay .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
+.loading-overlay .spinner-text{font-size:13px;color:var(--text-dim);letter-spacing:0.5px;font-weight:500}
+.loading-overlay .spinner-sub{font-size:10px;color:var(--text-muted)}
+/* Backward-compatible aliases */
+.loading-spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
 .loading-msg{margin-top:14px;font-size:13px;color:var(--text);font-weight:600;letter-spacing:0.3px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* ── Section Collapsing ── */
-.section-collapsible{overflow:hidden;transition:max-height .35s cubic-bezier(0.4,0,0.2,1),opacity .25s ease;max-height:2000px;opacity:1}
-.section-collapsible.collapsed{max-height:0!important;opacity:0;border-bottom-color:transparent}
+/* Inline spinner (for buttons, small areas) */
+.spinner-inline{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle}
+.btn .spinner-inline{margin-right:4px}
+
+/* ── Skeleton Loading Placeholders ── */
+.skeleton{position:relative;overflow:hidden;background:var(--bg-hover);border-radius:var(--radius-sm)}
+.skeleton::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.04) 40%,rgba(255,255,255,0.06) 50%,rgba(255,255,255,0.04) 60%,transparent 100%);animation:skeletonShimmer 1.5s ease-in-out infinite;transform:translateX(-100%)}
+@keyframes skeletonShimmer{to{transform:translateX(100%)}}
+
+.skeleton-text{height:12px;border-radius:3px;margin-bottom:6px}
+.skeleton-text:last-child{width:60%;margin-bottom:0}
+.skeleton-text.sm{height:9px}
+.skeleton-text.lg{height:16px}
+
+.skeleton-card{min-height:80px;border-radius:var(--radius);border:1px solid var(--border)}
+.skeleton-card .skeleton-header{height:20px;margin:10px;border-radius:3px}
+.skeleton-card .skeleton-body{height:10px;margin:10px;border-radius:3px}
+.skeleton-card .skeleton-body:nth-child(3){width:75%}
+
+.skeleton-circle{border-radius:50%}
+.skeleton-avatar{width:32px;height:32px;border-radius:50%}
+.skeleton-chart{height:200px;border-radius:var(--radius)}
+.skeleton-badge{width:60px;height:20px;border-radius:10px}
+
+/* ── Collapsible Sections ── */
+.section-collapsible{border-bottom:1px solid var(--border)}
+.section-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;cursor:pointer;user-select:none;transition:background var(--transition-fast)}
+.section-header:hover{background:var(--bg-hover)}
+.section-header .section-title{font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px}
+.section-header .section-chevron{font-size:10px;color:var(--text-muted);transition:transform var(--transition-base);display:inline-flex;align-items:center}
+.section-header .section-chevron::after{content:'\25BC';font-size:8px}
+.section-collapsible.collapsed .section-chevron{transform:rotate(-90deg)}
+.section-body{overflow:hidden;max-height:800px;transition:max-height var(--transition-slow) ease,opacity var(--transition-base),padding var(--transition-base)}
+.section-collapsible.collapsed .section-body{max-height:0;opacity:0;padding-top:0;padding-bottom:0}
+.section-header .section-badge{font-size:9px;padding:1px 6px;border-radius:8px;background:var(--accent-dim);color:var(--accent);font-weight:600;margin-left:6px}
+/* Backward-compatible toggle style */
 .section-header-toggle{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between}
-.section-header-toggle::after{content:'\25B2';font-size:8px;color:var(--text-dim);transition:transform .3s ease;margin-left:6px;flex-shrink:0}
+.section-header-toggle::after{content:'\25B2';font-size:8px;color:var(--text-dim);transition:transform 0.3s ease;margin-left:6px;flex-shrink:0}
 .section-header-toggle.collapsed::after{transform:rotate(180deg)}
 
-/* ── Tab Transitions ── */
-.tab-entering{animation:tabFadeIn .2s ease forwards}
-@keyframes tabFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+/* ── Price Flash Animations ── */
+.price-flash-up{animation:priceFlashUp 0.6s ease-out}
+.price-flash-down{animation:priceFlashDown 0.6s ease-out}
+@keyframes priceFlashUp{
+    0%{background-color:transparent}
+    15%{background-color:rgba(38,166,154,0.25);color:var(--green)}
+    100%{background-color:transparent}
+}
+@keyframes priceFlashDown{
+    0%{background-color:transparent}
+    15%{background-color:rgba(239,83,80,0.25);color:var(--red)}
+    100%{background-color:transparent}
+}
+
+/* Pulse ring animation for live indicators */
+.live-pulse{position:relative}
+.live-pulse::after{content:'';position:absolute;top:50%;left:50%;width:100%;height:100%;border-radius:50%;border:2px solid var(--green);transform:translate(-50%,-50%);animation:livePulseRing 2s ease-out infinite;opacity:0}
+@keyframes livePulseRing{
+    0%{transform:translate(-50%,-50%) scale(1);opacity:0.6}
+    100%{transform:translate(-50%,-50%) scale(2.2);opacity:0}
+}
+
+/* ── Empty State ── */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;text-align:center;min-height:160px}
+.empty-state-icon{font-size:36px;margin-bottom:12px;opacity:0.3;line-height:1}
+.empty-state-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px}
+.empty-state-desc{font-size:12px;color:var(--text-dim);max-width:280px;line-height:1.5;margin-bottom:16px}
+.empty-state .btn{padding:8px 20px;font-size:12px}
+.empty-state-compact{padding:20px 16px;min-height:80px}
+.empty-state-compact .empty-state-icon{font-size:22px;margin-bottom:8px}
+.empty-state-compact .empty-state-title{font-size:12px}
+.empty-state-compact .empty-state-desc{font-size:10px;margin-bottom:10px}
+
+/* ── Focus Visible - Accessibility ── */
+*:focus{outline:none}
+*:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--radius-sm)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;box-shadow:0 0 0 4px rgba(0,212,170,0.15)}
+.btn-primary:focus-visible{box-shadow:0 0 0 4px rgba(0,212,170,0.25)}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
+.center-tab:focus-visible{outline-offset:-2px}
+.mode-toggle-btn:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
+.tf-pill:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
+.cmd-trigger:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.watchlist-item:focus-visible{background:var(--bg-hover);outline:none;box-shadow:inset 2px 0 0 var(--accent)}
+
+/* ── Global Interaction Transitions ── */
+.mode-toggle-btn{transition:all var(--transition-fast)}
+.tf-pill{transition:all var(--transition-fast)}
+.panel-collapse-btn{transition:color var(--transition-fast),background var(--transition-fast)}
+.panel-collapse-btn:hover{background:var(--bg-hover)}
+.ind-card{transition:background var(--transition-fast)}
+.ticker-badge{transition:background var(--transition-fast)}
+.watchlist-item{transition:background var(--transition-fast)}
+.watchlist-item:hover{background:var(--bg-hover)}
+.coin-search-item{transition:background var(--transition-fast)}
+.filter-pill{transition:all var(--transition-fast)}
+.filter-pill:hover:not(.active){background:var(--bg-hover);color:var(--text)}
+.comparison-table td{transition:background var(--transition-fast)}
+.mtf-row{transition:background var(--transition-fast)}
+.regime-badge{transition:border-color var(--transition-fast),background var(--transition-fast)}
+.regime-badge:hover{background:var(--bg-hover)}
+.fc-btn{transition:color var(--transition-fast),transform var(--transition-fast)}
+.fc-btn:hover{transform:scale(1.15)}
+.fc-btn:active{transform:scale(0.9)}
+.fc-quick button{transition:all var(--transition-fast)}
+.fc-quick button:active{transform:scale(0.95)}
+.toast{transition:transform var(--transition-fast),opacity var(--transition-fast)}
+.toggle-switch{transition:background var(--transition-base)}
+.toggle-switch::after{transition:all var(--transition-base)}
 
 /* ── Loading Toast ── */
 .toast.loading{border-color:var(--accent);color:var(--text);display:flex;align-items:center;gap:8px}
-.toast.loading .toast-spinner{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+.toast.loading .toast-spinner{width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0}
 .toast-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;padding:0 0 0 6px;line-height:1}
 .toast-close:hover{color:var(--text)}
 
@@ -536,17 +643,72 @@ main.dashboard-mode #leftPanel{display:none}
 .chart-loading-indicator .loading-spinner{width:24px;height:24px;border-width:2px}
 .chart-loading-indicator span{margin-left:10px;font-size:12px;color:var(--text-muted);font-weight:600}
 
-/* ── Empty State ── */
-.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px;text-align:center;gap:10px}
-.empty-state-icon{font-size:32px;opacity:0.5}
-.empty-state-title{font-size:14px;font-weight:700;color:var(--text)}
-.empty-state-desc{font-size:11px;color:var(--text-muted);max-width:260px;line-height:1.5}
-.empty-state .btn{margin-top:4px}
+/* ── Modal & Command Palette Animations ── */
+.modal{animation:modalFadeIn var(--transition-base) ease-out}
+.modal-content{animation:modalSlideUp var(--transition-base) ease-out}
+@keyframes modalFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes modalSlideUp{from{opacity:0;transform:translateY(12px) scale(0.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+.cmd-palette{animation:modalFadeIn var(--transition-fast) ease-out}
+.cmd-box{animation:cmdSlideDown var(--transition-base) ease-out}
+@keyframes cmdSlideDown{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}
 
-/* Responsive */
+/* ── Tab Transitions ── */
+.tab-entering{animation:tabFadeIn 0.2s ease forwards}
+@keyframes tabFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Toast Enhancement ── */
+.toast{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+
+/* ══════════════════════════════════════════════════════
+   RESPONSIVE BREAKPOINTS
+   ══════════════════════════════════════════════════════ */
+
+/* Large screens */
+@media(max-width:1200px){
+    main{grid-template-columns:220px 1fr}
+    main.compare-mode{grid-template-columns:180px 1fr}
+    .floating-chat{width:340px;height:450px}
+    .dash-grid{gap:6px;padding:8px}
+    .cmd-box{width:460px}
+}
+
+/* Tablets and small laptops */
 @media(max-width:900px){
     main,main.compare-mode{grid-template-columns:1fr}
     #leftPanel{max-height:160px;border-right:none;border-bottom:1px solid var(--border)}
     .floating-chat{width:calc(100vw - 16px);right:8px;bottom:70px;height:55vh}
     .tf-pills{overflow-x:auto;flex-wrap:nowrap}
+    .dash-grid{grid-template-columns:1fr}
+}
+
+/* Mobile */
+@media(max-width:768px){
+    header{padding:4px 10px;gap:8px;height:40px;flex-wrap:wrap}
+    .header-left h1{font-size:14px}
+    .cmd-trigger{min-width:160px;padding:4px 10px;font-size:11px}
+    .cmd-trigger-kbd{display:none}
+    .cmd-box{width:calc(100vw - 24px);max-width:400px}
+    .mode-toggle-btn{padding:3px 8px;font-size:10px}
+    .tf-pills{gap:1px}
+    .tf-pill{padding:3px 6px;font-size:9px}
+    #tickerStrip{height:24px}
+    .ticker-badge{padding:0 8px;font-size:9px}
+    .signal-hero{padding:10px}
+    .signal-hero-dir{font-size:18px}
+    .indicators-grid{grid-template-columns:1fr 1fr}
+    .ind-card:nth-child(2n){border-right:none}
+    .ind-card:nth-child(3n){border-right:1px solid var(--border)}
+    .dash-grid{grid-template-columns:1fr;gap:6px;padding:6px}
+    .compare-detail{grid-template-columns:1fr 1fr}
+    .floating-chat{width:calc(100vw - 12px);right:6px;bottom:64px;height:60vh;border-radius:10px}
+    .floating-chat.maximized{width:calc(100vw - 12px);height:85vh;bottom:6px}
+    .chat-fab{width:42px;height:42px;bottom:14px;right:14px;font-size:12px}
+    .modal-content{width:calc(100vw - 24px);max-height:90vh}
+    .bt-metrics{gap:4px}
+    .bt-metric{min-width:60px;padding:6px 4px}
+    .bt-metric-value{font-size:13px}
+    .ts-levels{grid-template-columns:1fr;gap:3px}
+    .empty-state{padding:24px 16px;min-height:120px}
+    .empty-state-icon{font-size:28px}
+    .empty-state-title{font-size:12px}
 }

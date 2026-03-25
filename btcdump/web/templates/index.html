@@ -91,11 +91,13 @@
 
             <!-- Single Mode -->
             <div id="singleSignalView">
-                <div class="signal-hero" id="signalHero">
-                    <div class="signal-hero-dir" id="signalDirection">--</div>
-                    <div class="signal-hero-conf">
-                        <div class="conf-bar"><div class="conf-bar-fill" id="confBarFill" style="width:0%"></div></div>
-                        <span class="conf-label" id="signalConf">--</span>
+                <div class="signal-hero section-header-toggle" id="signalHero" onclick="toggleSection('signalHeroBody')">
+                    <div id="signalHeroBody">
+                        <div class="signal-hero-dir" id="signalDirection">--</div>
+                        <div class="signal-hero-conf">
+                            <div class="conf-bar"><div class="conf-bar-fill" id="confBarFill" style="width:0%"></div></div>
+                            <span class="conf-label" id="signalConf">--</span>
+                        </div>
                     </div>
                 </div>
                 <div class="price-section">
@@ -198,10 +200,13 @@
                 </div><!-- /section-collapsible indicators -->
 
                 <!-- Multi-Timeframe Analysis -->
-                <div class="mtf-section" id="mtfSection">
-                    <div class="signal-label" style="padding:8px 14px 4px;display:flex;justify-content:space-between;align-items:center">
-                        Multi-Timeframe
-                        <button class="btn btn-sm" onclick="loadMultiTF()">Load</button>
+                <div class="section-collapsible mtf-section" id="mtfSection">
+                    <div class="section-header" onclick="toggleSection('mtfContent')">
+                        <span>Multi-Timeframe</span>
+                        <span style="display:flex;align-items:center;gap:6px">
+                            <button class="btn btn-sm" onclick="event.stopPropagation();loadMultiTF()">Load</button>
+                            <span class="section-chevron"></span>
+                        </span>
                     </div>
                     <div id="mtfContent" class="mtf-grid">
                         <div class="mtf-placeholder" style="padding:4px 14px;font-size:10px;color:var(--text-muted)">Click Load to analyze 4 timeframes</div>

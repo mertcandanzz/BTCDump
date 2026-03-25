@@ -85,27 +85,33 @@ function hideLoading() {
 function toggleSection(id) {
     const el = document.getElementById(id);
     if (!el) return;
-    const isCollapsed = el.classList.toggle('collapsed');
-    // Toggle the header arrow if present
-    const header = el.previousElementSibling;
-    if (header && header.classList.contains('section-header-toggle')) {
-        header.classList.toggle('collapsed', isCollapsed);
+    // Find the parent .section-collapsible wrapper if it exists
+    const wrapper = el.closest('.section-collapsible') || el;
+    const isCollapsed = wrapper.classList.toggle('collapsed');
+    // Also toggle the direct element for non-wrapped sections
+    if (wrapper !== el) {
+        el.style.maxHeight = isCollapsed ? '0' : '';
+        el.style.overflow = isCollapsed ? 'hidden' : '';
+        el.style.opacity = isCollapsed ? '0' : '1';
+        el.style.transition = 'max-height .35s cubic-bezier(0.4,0,0.2,1), opacity .25s ease';
     }
     // Persist state
     const key = 'btcdump_section_' + id;
     localStorage.setItem(key, isCollapsed ? '1' : '0');
 }
 function restoreSectionStates() {
-    ['signalHeroBody','indicatorsGrid','mtfContent','ensembleBody'].forEach(id => {
+    ['signalHeroBody','indicatorsGrid','ensembleInner','mtfContent'].forEach(id => {
         const key = 'btcdump_section_' + id;
         const val = localStorage.getItem(key);
+        if (val !== '1') return;
         const el = document.getElementById(id);
-        if (val === '1' && el) {
-            el.classList.add('collapsed');
-            const header = el.previousElementSibling;
-            if (header && header.classList.contains('section-header-toggle')) {
-                header.classList.toggle('collapsed', true);
-            }
+        if (!el) return;
+        const wrapper = el.closest('.section-collapsible') || el;
+        wrapper.classList.add('collapsed');
+        if (wrapper !== el) {
+            el.style.maxHeight = '0';
+            el.style.overflow = 'hidden';
+            el.style.opacity = '0';
         }
     });
 }
@@ -250,8 +256,37 @@ function renderWatchlistMgr(){
 async function loadTickerStrip(){try{const r=await fetch('/api/coins?limit=25');const j=await r.json();if(!j.ok)return;document.getElementById('tickerStrip').innerHTML=j.coins.slice(0,20).map(c=>`<div class="ticker-badge" onclick="selectCoin('${c.symbol}')"><span class="sym">${c.baseAsset}</span><span class="price">$${fmtP(c.lastPrice)}</span><span class="change ${c.priceChangePercent>=0?'up':'down'}">${c.priceChangePercent>=0?'+':''}${c.priceChangePercent.toFixed(1)}%</span></div>`).join('');}catch(e){}}
 
 // ── Signal UI ──
+let _signalHeroOriginal = null;
+function showSignalEmptyState() {
+    const body = document.getElementById('signalHeroBody');
+    const target = body || document.getElementById('signalHero');
+    if (!target) return;
+    // Cache the original HTML so we can restore it
+    if (!_signalHeroOriginal) _signalHeroOriginal = target.innerHTML;
+    // Remove toggle class to prevent collapse on empty state
+    const hero = document.getElementById('signalHero');
+    if (hero) hero.classList.remove('section-header-toggle');
+    target.innerHTML = `<div class="empty-state">
+        <div class="empty-state-icon">&#x1F4C8;</div>
+        <div class="empty-state-title">No Signal Data Yet</div>
+        <div class="empty-state-desc">Select a coin from the search bar or ticker strip, then click Refresh to compute an AI-powered trading signal.</div>
+        <button class="btn btn-primary" onclick="event.stopPropagation();refreshSignal()">Compute Signal</button>
+        <button class="btn" onclick="event.stopPropagation();switchMode('dashboard')" style="margin-top:2px">View Dashboard</button>
+    </div>`;
+}
+function restoreSignalHero() {
+    const body = document.getElementById('signalHeroBody');
+    const target = body || document.getElementById('signalHero');
+    if (target && _signalHeroOriginal && !document.getElementById('signalDirection')) {
+        target.innerHTML = _signalHeroOriginal;
+        // Restore toggle class
+        const hero = document.getElementById('signalHero');
+        if (hero) hero.classList.add('section-header-toggle');
+    }
+}
 function updateSignalUI(d) {
-    if(!d?.current_price)return;
+    if(!d?.current_price){showSignalEmptyState();return;}
+    restoreSignalHero();
     document.getElementById('coinLabel').textContent=(d.symbol||activeSymbol).replace('USDT','/USDT');
     document.getElementById('currentPrice').textContent='$'+fmtP(d.current_price);
     const ch=document.getElementById('priceChange');
@@ -1681,16 +1716,19 @@ async function loadDashboard() {
 async function dashboardComputeSignal() {
     const btn = event?.target;
     if (btn) { btn.disabled = true; btn.textContent = 'Computing... please wait'; }
-    toast('Computing BTC signal (first time includes model training, ~2-3 min)...', 'info');
+    showLoading('Computing BTC signal (first run trains ML models)...');
+    const loadingToast = toast('Computing BTC signal (first time includes model training, ~2-3 min)...', 'loading');
     try {
         // Try quick signal first (no training)
         const qr = await fetch(`/api/coin/BTCUSDT/signal-quick`, {signal: AbortSignal.timeout(10000)}).catch(() => null);
         if (qr?.ok) {
             const qj = await qr.json();
             if (qj.ok && qj.data?.current_price) {
+                dismissToast(loadingToast);
                 toast('Quick signal ready! (no ML, indicators only)', 'success');
                 loadDashboard();
                 if (btn) { btn.disabled = false; btn.textContent = 'Compute Full ML Signal'; }
+                showLoading('Training ML models for full signal...');
             }
         }
     } catch(e) {}
@@ -1698,23 +1736,28 @@ async function dashboardComputeSignal() {
     try {
         const r = await fetch(`/api/coin/BTCUSDT/signal`);
         const j = await r.json();
+        dismissToast(loadingToast);
         if (j.ok) { toast('Full ML signal ready!', 'success'); loadDashboard(); }
         else toast(j.error || 'Failed', 'error');
-    } catch(e) { toast('Signal computation timed out - try refreshing', 'error'); }
+    } catch(e) { dismissToast(loadingToast); toast('Signal computation timed out - try refreshing', 'error'); }
+    hideLoading();
     if (btn) { btn.disabled = false; btn.textContent = 'Compute BTC Signal'; }
 }
 
 async function dashboardRefreshSignals() {
-    toast('Computing signals for watchlist (this takes a while)...', 'info');
     const wl = watchlist.length ? watchlist : ['BTCUSDT','ETHUSDT','BNBUSDT','SOLUSDT','XRPUSDT'];
+    const loadingToast = toast(`Computing signals for ${wl.length} coins...`, 'loading');
+    showLoading('Computing signals: 0/' + wl.length + '...');
     let done = 0;
     for (const sym of wl) {
         try {
+            showLoading(`Computing signal ${done+1}/${wl.length}: ${sym.replace('USDT','/USDT')}...`);
             await fetch(`/api/coin/${sym}/signal`);
             done++;
-            toast(`${done}/${wl.length} signals computed`, 'info');
         } catch(e) {}
     }
+    hideLoading();
+    dismissToast(loadingToast);
     toast(`All ${done} signals ready!`, 'success');
     loadDashboard();
 }
@@ -1722,9 +1765,15 @@ async function dashboardRefreshSignals() {
 // ── Init ──
 async function init(){
     try{const r=await fetch('/api/providers');providerStatus=await r.json();}catch(e){}
-    try{const r=await fetch('/api/signal/cached');const j=await r.json();if(j.ok&&j.data?.current_price)updateSignalUI(j.data);}catch(e){}
+    let hasCachedSignal = false;
+    try{const r=await fetch('/api/signal/cached');const j=await r.json();if(j.ok&&j.data?.current_price){updateSignalUI(j.data);hasCachedSignal=true;}}catch(e){}
     await syncWL(); loadTickerStrip(); loadCandlestickChart(); updateFcContext(); connectWS();
     loadFearGreed(); loadCustomPresets(); checkAnomalies();
+    restoreSectionStates();
+    // Auto-switch to dashboard if no cached signal (first visit UX)
+    if (!hasCachedSignal) {
+        switchMode('dashboard');
+    }
     addDiscMsg('system','BTCDump v5.1 | F1:dashboard F2:analysis F3:compare | Ctrl+K:search R:refresh');
 }
 init();
