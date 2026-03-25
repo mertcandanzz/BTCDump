@@ -666,6 +666,98 @@ def create_app(config: Optional[AppConfig] = None) -> FastAPI:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    # ── Smart Ranking (best trade opportunities) ──────────
+
+    @app.get("/api/smart-rank")
+    async def smart_rank():
+        """Rank watchlist coins by trade opportunity quality.
+
+        Combines: signal direction, confidence, volume, regime,
+        relative strength, and anomaly detection into one score.
+        """
+        try:
+            def _rank():
+                from btcdump import indicators as ind
+                results = []
+                interval = state.coin_manager.active_interval
+
+                # Pre-fetch BTC data for RS calculation
+                try:
+                    btc_data = state.coin_manager.fetcher.fetch_with_cache("BTCUSDT", interval)
+                except Exception:
+                    btc_data = None
+
+                for symbol in state.coin_manager.watchlist:
+                    try:
+                        cached = state.coin_manager.signal_cache.get(symbol, {})
+                        if not cached or cached.get("status") != "ready":
+                            continue
+
+                        data = state.coin_manager.fetcher.fetch_with_cache(symbol, interval)
+                        enriched = ind.compute_all(data.df.copy(), state.config.indicators)
+                        row = enriched.iloc[-1]
+
+                        # Component scores (0-100 each)
+                        direction = cached.get("direction", "HOLD")
+                        dir_score = 100 if "STRONG" in direction else 70 if direction != "HOLD" else 20
+
+                        conf_score = min(100, cached.get("confidence", 0))
+
+                        vol_ratio = float(row.get("volume_ratio", 1))
+                        vol_score = min(100, vol_ratio * 40)
+
+                        efficiency = float(row.get("efficiency_ratio", 0.5))
+                        regime_score = efficiency * 100  # trending = higher score
+
+                        # RS vs BTC
+                        rs_score = 50
+                        if btc_data and symbol != "BTCUSDT":
+                            rs = ind.compute_relative_strength(data.df, btc_data.df)
+                            rs_score = min(100, max(0, 50 + rs.get("rs_ratio", 0) * 10))
+
+                        # Anomaly bonus (unusual activity = opportunity)
+                        anomaly = ind.detect_anomalies(data.df)
+                        anomaly_bonus = 15 if anomaly.get("volume_anomaly") else 0
+
+                        # Whale bonus
+                        whale = float(row.get("whale_score", 0))
+                        whale_bonus = min(15, whale * 5) if whale > 0 else 0
+
+                        total = (
+                            dir_score * 0.25 +
+                            conf_score * 0.25 +
+                            vol_score * 0.15 +
+                            regime_score * 0.15 +
+                            rs_score * 0.10 +
+                            anomaly_bonus +
+                            whale_bonus
+                        ) * 0.1  # scale to ~0-10
+
+                        results.append({
+                            "symbol": symbol,
+                            "baseAsset": symbol.replace("USDT", ""),
+                            "direction": direction,
+                            "score": round(total, 1),
+                            "confidence": round(cached.get("confidence", 0), 1),
+                            "volume_ratio": round(vol_ratio, 2),
+                            "regime": "trending" if efficiency > 0.5 else "choppy",
+                            "rs_vs_btc": round(rs_score - 50, 1),
+                            "whale_activity": bool(whale > 1),
+                            "anomaly": bool(anomaly.get("volume_anomaly") or anomaly.get("price_anomaly")),
+                            "rsi": round(float(row.get("RSI", 0)), 1),
+                            "change_pct": round(cached.get("change_pct", 0), 2),
+                        })
+                    except Exception:
+                        continue
+
+                results.sort(key=lambda x: x["score"], reverse=True)
+                return results
+
+            ranked = await asyncio.to_thread(_rank)
+            return {"ok": True, "coins": ranked}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     # ── LLM Providers ─────────────────────────────────────
 
     @app.get("/api/providers")
